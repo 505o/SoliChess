@@ -12,6 +12,8 @@ SoliChess may process and store:
 - Chess.com usernames and stable player IDs.
 - Public Chess.com profile information, including ratings, title, account status, and public profile URL.
 - Verification status, verification method, timestamps, and rating-role assignments.
+- Puzzle progress, puzzle rating, solved and failed counts, and streak statistics.
+- Public completed-game data requested for post-game analysis, including the game URL and engine-derived review results.
 - Administrative audit records, such as account linking, account-status changes, restoration, or unlinking actions.
 - OAuth authorization data if Chess.com OAuth is enabled. OAuth tokens will only be used to authenticate the connected account and access approved Chess.com data.
 
@@ -25,6 +27,8 @@ We use this information to:
 - Prevent impersonation and duplicate account linking.
 - Display public chess ratings and assign the appropriate Discord roles.
 - Calculate leaderboards within a Discord server.
+- Provide tactical puzzles, puzzle ratings, streaks, and puzzle leaderboards.
+- Analyze a connected member's completed public games for post-game learning.
 - Monitor public account-status changes and place closed accounts into administrative review.
 - Maintain security, investigate abuse, troubleshoot problems, and enforce server rules.
 

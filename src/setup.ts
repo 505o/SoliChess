@@ -23,6 +23,7 @@ export async function setupGuild(
   requestedLogChannelId?: string
 ): Promise<GuildSettings> {
   const everyoneId = guild.roles.everyone.id;
+  const botUserId = guild.client.user.id;
   const verifiedRoleId = await getOrCreateRole(guild, "Verified Chess Player", 0x57f287);
   const reviewRoleId = await getOrCreateRole(guild, "Account Review", 0xed4245);
 
@@ -64,16 +65,40 @@ export async function setupGuild(
       type: ChannelType.GuildText,
       permissionOverwrites: [
         { id: everyoneId, deny: [PermissionFlagsBits.ViewChannel] },
-        { id: guild.ownerId, allow: [PermissionFlagsBits.ViewChannel] }
+        { id: guild.ownerId, allow: [PermissionFlagsBits.ViewChannel] },
+        {
+          id: botUserId,
+          allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory]
+        }
       ],
       reason: "Chess Gate audit logs"
     });
     logChannelId = logs.id;
   }
 
+  const analysisChannel = await guild.channels.create({
+    name: "مراجعات-المباريات",
+    type: ChannelType.GuildText,
+    permissionOverwrites: [
+      { id: everyoneId, deny: [PermissionFlagsBits.ViewChannel] },
+      { id: verifiedRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
+      {
+        id: botUserId,
+        allow: [
+          PermissionFlagsBits.ViewChannel,
+          PermissionFlagsBits.SendMessages,
+          PermissionFlagsBits.ReadMessageHistory,
+          PermissionFlagsBits.EmbedLinks,
+          PermissionFlagsBits.AttachFiles
+        ]
+      }
+    ],
+    reason: "SoliChess automatic post-game reviews"
+  });
+
   if (lockExisting) {
     for (const channel of guild.channels.cache.values()) {
-      if (channel.id === category.id || channel.parentId === category.id || channel.id === logChannelId) continue;
+      if (channel.id === category.id || channel.parentId === category.id || channel.id === logChannelId || channel.id === analysisChannel.id) continue;
       if (channel.isThread()) continue;
       await channel.permissionOverwrites.edit(everyoneId, { ViewChannel: false }, { reason: "Mandatory Chess.com verification" });
       await channel.permissionOverwrites.edit(verifiedRoleId, { ViewChannel: true }, { reason: "Mandatory Chess.com verification" });
@@ -121,6 +146,7 @@ export async function setupGuild(
     onboardingCategoryId: category.id,
     rulesChannelId: verify.id,
     verifyChannelId: verify.id,
-    logChannelId
+    logChannelId,
+    analysisChannelId: analysisChannel.id
   };
 }

@@ -1,4 +1,4 @@
-import type { ChessComProfile, ChessComStats, RatingSnapshot } from "./types.js";
+import type { ChessComGame, ChessComProfile, ChessComStats, RatingSnapshot } from "./types.js";
 
 const API_BASE = "https://api.chess.com/pub";
 
@@ -21,10 +21,22 @@ function cleanUsername(username: string): string {
 }
 
 export class ChessComClient {
+  private requestQueue: Promise<void> = Promise.resolve();
+
   constructor(private readonly userAgent: string) {}
 
   private async get<T>(path: string): Promise<T> {
-    const response = await fetch(`${API_BASE}${path}`, {
+    return this.getUrl<T>(`${API_BASE}${path}`);
+  }
+
+  private async getUrl<T>(url: string): Promise<T> {
+    const request = this.requestQueue.then(() => this.fetchUrl<T>(url));
+    this.requestQueue = request.then(() => undefined, () => undefined);
+    return request;
+  }
+
+  private async fetchUrl<T>(url: string): Promise<T> {
+    const response = await fetch(url, {
       headers: {
         "User-Agent": this.userAgent,
         Accept: "application/json"
@@ -51,6 +63,21 @@ export class ChessComClient {
 
   getStats(username: string): Promise<ChessComStats> {
     return this.get<ChessComStats>(`/player/${encodeURIComponent(cleanUsername(username))}/stats`);
+  }
+
+  async getLatestCompletedGame(username: string): Promise<ChessComGame> {
+    const clean = cleanUsername(username);
+    const archiveIndex = await this.get<{ archives: string[] }>(`/player/${encodeURIComponent(clean)}/games/archives`);
+    if (archiveIndex.archives.length === 0) throw new ChessComApiError("لا توجد مباريات مكتملة لهذا الحساب.", 404);
+    for (const archiveUrl of archiveIndex.archives.slice(-6).reverse()) {
+      const archive = await this.getUrl<{ games: ChessComGame[] }>(archiveUrl);
+      const games = archive.games
+        .filter((game) => game.rules === "chess" && Boolean(game.end_time) && Boolean(game.pgn))
+        .sort((first, second) => second.end_time - first.end_time);
+      const latest = games[0];
+      if (latest) return latest;
+    }
+    throw new ChessComApiError("لا توجد مباراة شطرنج مكتملة قابلة للتحليل.", 404);
   }
 }
 

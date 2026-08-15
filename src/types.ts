@@ -47,6 +47,7 @@ export interface GuildSettings {
   rulesChannelId: string;
   verifyChannelId: string;
   logChannelId: string;
+  analysisChannelId: string;
 }
 
 export interface LinkRecord {
@@ -59,6 +60,7 @@ export interface LinkRecord {
   accountStatus: string;
   lastCheckedAt: number | null;
   lastStatsJson: string | null;
+  lastAnalyzedGameUrl: string | null;
 }
 
 export interface PendingVerification {
@@ -69,4 +71,51 @@ export interface PendingVerification {
   challengeCode: string;
   createdAt: number;
   expiresAt: number;
+}
+
+export interface ChessComGamePlayer {
+  username: string;
+  rating: number;
+  result: string;
+}
+
+export interface ChessComGame {
+  url: string;
+  pgn: string;
+  end_time: number;
+  time_class: string;
+  time_control: string;
+  rules: string;
+  rated?: boolean;
+  white: ChessComGamePlayer;
+  black: ChessComGamePlayer;
+  accuracies?: {
+    white?: number;
+    black?: number;
+  };
+}
+
+export interface PuzzleSession {
+  guildId: string;
+  discordUserId: string;
+  puzzleId: string;
+  currentFen: string;
+  solutionMoves: string[];
+  currentIndex: number;
+  puzzleRating: number;
+  themes: string[];
+  userColor: "w" | "b";
+  failedOnce: boolean;
+  startedAt: number;
+}
+
+export interface PuzzleStats {
+  guildId: string;
+  discordUserId: string;
+  rating: number;
+  solved: number;
+  failed: number;
+  streak: number;
+  bestStreak: number;
+  updatedAt: number;
 }

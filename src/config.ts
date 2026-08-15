@@ -10,6 +10,8 @@ export interface AppConfig {
   checkIntervalMinutes: number;
   verificationTtlMinutes: number;
   httpPort: number;
+  engineDepth: number;
+  gameCheckIntervalMinutes: number;
 }
 
 function required(name: string): string {
@@ -38,6 +40,8 @@ export function loadConfig(): AppConfig {
     databasePath: path.resolve(process.env.DATABASE_PATH?.trim() || "./data/chess-gate.db"),
     checkIntervalMinutes: positiveInteger("CHECK_INTERVAL_MINUTES", 360),
     verificationTtlMinutes: positiveInteger("VERIFICATION_TTL_MINUTES", 30),
-    httpPort: positiveInteger("HTTP_PORT", 3000)
+    httpPort: positiveInteger("HTTP_PORT", 3000),
+    engineDepth: positiveInteger("ENGINE_DEPTH", 10),
+    gameCheckIntervalMinutes: positiveInteger("GAME_CHECK_INTERVAL_MINUTES", 15)
   };
 }

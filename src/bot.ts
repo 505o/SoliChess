@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonInteraction,
   ButtonStyle,
@@ -23,12 +24,27 @@ import type { AppConfig } from "./config.js";
 import { ChessComApiError, ChessComClient, isClosedStatus, isFairPlayClosure, ratingSnapshot } from "./chesscom.js";
 import { commandJson } from "./commands.js";
 import { AppDatabase } from "./database.js";
+import { renderBoard, renderEvaluationGraph } from "./board-renderer.js";
+import { analyzeCompletedGame, type GameAnalysisResult, type MoveClassification } from "./game-analysis.js";
+import { LichessPuzzleClient } from "./lichess-puzzles.js";
+import {
+  colorName,
+  puzzleHint,
+  sessionFromPuzzle,
+  solutionInSan,
+  submitPuzzleMove,
+  themeLabels,
+  updatedPuzzleRating
+} from "./puzzles.js";
 import { applyChessRoles, isManagedRatingRole, quarantineMember } from "./rating-roles.js";
 import { setupGuild } from "./setup.js";
-import type { ChessComProfile, ChessComStats, LinkRecord, RatingSnapshot, TimeClass } from "./types.js";
+import { StockfishEngine } from "./stockfish.js";
+import type { ChessComProfile, ChessComStats, LinkRecord, PuzzleSession, RatingSnapshot, TimeClass } from "./types.js";
 
 const LINK_MODAL_ID = "chess_link_modal";
 const CHECK_BUTTON_ID = "chess_link_check";
+const PUZZLE_MOVE_PREFIX = "puzzle_move:";
+const PUZZLE_MODAL_PREFIX = "puzzle_move_modal:";
 
 function challengeCode(): string {
   return `DC-${randomInt(100_000, 1_000_000)}`;
@@ -66,13 +82,19 @@ export class ChessGateBot {
   });
 
   private readonly chess: ChessComClient;
+  private readonly puzzles: LichessPuzzleClient;
+  private readonly engine = new StockfishEngine();
+  private readonly analysesInProgress = new Set<string>();
+  private readonly lastAnalysisAt = new Map<string, number>();
   private monitorRunning = false;
+  private gameMonitorRunning = false;
 
   constructor(
     private readonly config: AppConfig,
     private readonly db: AppDatabase
   ) {
     this.chess = new ChessComClient(config.chessComUserAgent);
+    this.puzzles = new LichessPuzzleClient(config.chessComUserAgent);
   }
 
   async start(): Promise<void> {
@@ -81,7 +103,11 @@ export class ChessGateBot {
       await this.registerCommands();
       this.db.deleteExpiredPending();
       setInterval(() => void this.refreshAll(), this.config.checkIntervalMinutes * 60_000).unref();
-      void this.refreshAll();
+      setInterval(() => void this.monitorCompletedGames(), this.config.gameCheckIntervalMinutes * 60_000).unref();
+      void (async () => {
+        await this.refreshAll();
+        await this.monitorCompletedGames();
+      })();
     });
 
     this.client.on("interactionCreate", (interaction) => {
@@ -112,10 +138,14 @@ export class ChessGateBot {
     if (interaction.isButton()) {
       if (interaction.customId === "chess_link_start") return void await this.openLinkModal(interaction);
       if (interaction.customId === CHECK_BUTTON_ID) return void await this.checkChallenge(interaction);
+      if (interaction.customId.startsWith("puzzle_")) return void await this.handlePuzzleButton(interaction);
     }
 
     if (interaction.isModalSubmit() && interaction.customId === LINK_MODAL_ID) {
       return void await this.beginLink(interaction);
+    }
+    if (interaction.isModalSubmit() && interaction.customId.startsWith(PUZZLE_MODAL_PREFIX)) {
+      return void await this.handlePuzzleMove(interaction);
     }
 
     if (!interaction.isChatInputCommand()) return;
@@ -123,6 +153,9 @@ export class ChessGateBot {
       case "setup": return void await this.handleSetup(interaction);
       case "profile": return void await this.handleProfile(interaction);
       case "leaderboard": return void await this.handleLeaderboard(interaction);
+      case "puzzle": return void await this.handlePuzzle(interaction);
+      case "puzzle-stats": return void await this.handlePuzzleStats(interaction);
+      case "analyze": return void await this.handleAnalyze(interaction);
       case "refresh": return void await this.handleRefresh(interaction);
       case "restore": return void await this.handleRestore(interaction);
       case "unlink": return void await this.handleUnlink(interaction);
@@ -252,7 +285,8 @@ export class ChessGateBot {
       verifiedVia: "profile_location_challenge",
       accountStatus: profile.status,
       lastCheckedAt: Date.now(),
-      lastStatsJson: JSON.stringify(stats)
+      lastStatsJson: JSON.stringify(stats),
+      lastAnalyzedGameUrl: null
     };
 
     try {
@@ -287,6 +321,278 @@ export class ChessGateBot {
     });
   }
 
+  private puzzleComponents(ownerId: string, active: boolean): ActionRowBuilder<ButtonBuilder>[] {
+    if (!active) {
+      return [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(`puzzle_next:${ownerId}`).setLabel("لغز جديد").setStyle(ButtonStyle.Success)
+      )];
+    }
+    return [new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`${PUZZLE_MOVE_PREFIX}${ownerId}`).setLabel("أدخل النقلة").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`puzzle_hint:${ownerId}`).setLabel("تلميح").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`puzzle_giveup:${ownerId}`).setLabel("استسلام").setStyle(ButtonStyle.Danger)
+    )];
+  }
+
+  private async puzzlePayload(session: PuzzleSession, note?: string, active = true) {
+    const stats = this.db.getPuzzleStats(session.guildId, session.discordUserId);
+    const filename = `solichess-puzzle-${session.puzzleId}.png`;
+    const board = await renderBoard(session.currentFen, session.userColor);
+    const description = [
+      `أنت تلعب بـ **${colorName(session.userColor)}**. ابحث عن أفضل نقلة.`,
+      note ? `\n${note}` : "",
+      "\nاكتب النقلة بصيغة مثل `Nf7+` أو `e2e4`."
+    ].join("");
+    const embed = new EmbedBuilder()
+      .setColor(active ? 0x5865f2 : 0x57f287)
+      .setTitle(active ? "لغز SoliChess" : "نتيجة اللغز")
+      .setDescription(description)
+      .addFields(
+        { name: "تقييمك", value: String(stats.rating), inline: true },
+        { name: "السلسلة", value: String(stats.streak), inline: true },
+        { name: "المواضيع", value: themeLabels(session.themes) || "تكتيك", inline: false }
+      )
+      .setImage(`attachment://${filename}`)
+      .setFooter({ text: active ? "ألغاز مرخّصة CC0 من قاعدة Lichess المفتوحة" : `تقييم اللغز: ${session.puzzleRating} • Lichess CC0` });
+    return {
+      content: null,
+      embeds: [embed],
+      files: [new AttachmentBuilder(board, { name: filename })],
+      components: this.puzzleComponents(session.discordUserId, active)
+    };
+  }
+
+  private recordPuzzleFailure(session: PuzzleSession): PuzzleSession {
+    if (session.failedOnce) return session;
+    const stats = this.db.getPuzzleStats(session.guildId, session.discordUserId);
+    stats.rating = updatedPuzzleRating(stats.rating, session.puzzleRating, false);
+    stats.failed += 1;
+    stats.streak = 0;
+    stats.updatedAt = Date.now();
+    this.db.savePuzzleStats(stats);
+    const failedSession = { ...session, failedOnce: true };
+    this.db.savePuzzleSession(failedSession);
+    return failedSession;
+  }
+
+  private recordPuzzleSuccess(session: PuzzleSession): void {
+    const stats = this.db.getPuzzleStats(session.guildId, session.discordUserId);
+    stats.solved += 1;
+    if (!session.failedOnce) {
+      stats.rating = updatedPuzzleRating(stats.rating, session.puzzleRating, true);
+      stats.streak += 1;
+      stats.bestStreak = Math.max(stats.bestStreak, stats.streak);
+    }
+    stats.updatedAt = Date.now();
+    this.db.savePuzzleStats(stats);
+  }
+
+  private async createPuzzle(guildId: string, userId: string): Promise<PuzzleSession> {
+    const previous = this.db.getPuzzleSession(guildId, userId);
+    if (previous) this.recordPuzzleFailure(previous);
+    const puzzle = await this.puzzles.getNextPuzzle();
+    const session = sessionFromPuzzle(guildId, userId, puzzle);
+    this.db.savePuzzleSession(session);
+    return session;
+  }
+
+  private async handlePuzzle(interaction: ChatInputCommandInteraction): Promise<void> {
+    const link = this.db.getLinkByDiscord(interaction.guildId!, interaction.user.id);
+    if (!link) return void await replyError(interaction, "اربط حساب Chess.com أولًا قبل استخدام الألغاز.");
+    await interaction.deferReply();
+    const session = await this.createPuzzle(interaction.guildId!, interaction.user.id);
+    await interaction.editReply(await this.puzzlePayload(session));
+  }
+
+  private async handlePuzzleButton(interaction: ButtonInteraction): Promise<void> {
+    const [action, ownerId] = interaction.customId.split(":", 2);
+    if (!ownerId || ownerId !== interaction.user.id) {
+      return void await interaction.reply({ content: "هذا اللغز يخص عضوًا آخر. استخدم `/puzzle` لبدء لغزك.", ephemeral: true });
+    }
+
+    if (action === "puzzle_next") {
+      await interaction.deferUpdate();
+      const session = await this.createPuzzle(interaction.guildId!, ownerId);
+      await interaction.editReply(await this.puzzlePayload(session));
+      return;
+    }
+
+    const session = this.db.getPuzzleSession(interaction.guildId!, ownerId);
+    if (!session) return void await interaction.reply({ content: "انتهت جلسة اللغز. ابدأ لغزًا جديدًا.", ephemeral: true });
+
+    if (action === "puzzle_hint") {
+      return void await interaction.reply({ content: `💡 ${puzzleHint(session)}`, ephemeral: true });
+    }
+
+    if (action === "puzzle_giveup") {
+      const remaining = solutionInSan(session);
+      const failed = this.recordPuzzleFailure(session);
+      this.db.deletePuzzleSession(session.guildId, session.discordUserId);
+      await interaction.deferUpdate();
+      await interaction.editReply(await this.puzzlePayload(failed, `استسلمت. الحل المتبقي: **${remaining.join(" ")}**`, false));
+      return;
+    }
+
+    if (action === "puzzle_move") {
+      const input = new TextInputBuilder()
+        .setCustomId("puzzle_move_value")
+        .setLabel("اكتب نقلتك")
+        .setPlaceholder("مثال: Nf7+ أو e2e4")
+        .setMinLength(2)
+        .setMaxLength(12)
+        .setRequired(true)
+        .setStyle(TextInputStyle.Short);
+      await interaction.showModal(
+        new ModalBuilder()
+          .setCustomId(`${PUZZLE_MODAL_PREFIX}${ownerId}`)
+          .setTitle("حل اللغز")
+          .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input))
+      );
+    }
+  }
+
+  private async handlePuzzleMove(interaction: ModalSubmitInteraction): Promise<void> {
+    const ownerId = interaction.customId.slice(PUZZLE_MODAL_PREFIX.length);
+    if (ownerId !== interaction.user.id) return void await replyError(interaction, "هذا اللغز يخص عضوًا آخر.");
+    const session = this.db.getPuzzleSession(interaction.guildId!, ownerId);
+    if (!session) return void await replyError(interaction, "انتهت جلسة اللغز. ابدأ لغزًا جديدًا.");
+    const input = interaction.fields.getTextInputValue("puzzle_move_value");
+
+    let result;
+    try {
+      result = submitPuzzleMove(session, input);
+    } catch {
+      return void await interaction.reply({ content: "هذه النقلة غير قانونية أو صيغتها غير صحيحة. جرّب مثل `Nf7+` أو `e2e4`.", ephemeral: true });
+    }
+
+    if (result.kind === "wrong") {
+      this.recordPuzzleFailure(result.session);
+      return void await interaction.reply({ content: "❌ ليست أفضل نقلة. خسر اللغز تقييمه، لكن تستطيع المحاولة مرة أخرى.", ephemeral: true });
+    }
+
+    if (result.kind === "continue") {
+      this.db.savePuzzleSession(result.session);
+      await interaction.deferUpdate();
+      await interaction.editReply(await this.puzzlePayload(
+        result.session,
+        `✅ **${result.playedSan}** صحيحة. رد الخصم: **${result.opponentSan}** — أكمل الحل.`
+      ));
+      return;
+    }
+
+    this.recordPuzzleSuccess(result.session);
+    this.db.deletePuzzleSession(result.session.guildId, result.session.discordUserId);
+    await interaction.deferUpdate();
+    await interaction.editReply(await this.puzzlePayload(
+      result.session,
+      result.session.failedOnce
+        ? `✅ أكملت الحل بالنقلة **${result.playedSan}** بعد محاولة خاطئة.`
+        : `🎉 حل صحيح من أول محاولة: **${result.playedSan}**`,
+      false
+    ));
+  }
+
+  private async handlePuzzleStats(interaction: ChatInputCommandInteraction): Promise<void> {
+    const target = interaction.options.getUser("member") ?? interaction.user;
+    const stats = this.db.getPuzzleStats(interaction.guildId!, target.id);
+    const ranked = this.db.listPuzzleStats(interaction.guildId!);
+    const rankIndex = ranked.findIndex((entry) => entry.discordUserId === target.id);
+    await interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xfee75c)
+        .setTitle(`إحصائيات ألغاز ${target.displayName}`)
+        .addFields(
+          { name: "التقييم", value: String(stats.rating), inline: true },
+          { name: "ترتيب السيرفر", value: rankIndex >= 0 ? `#${rankIndex + 1}` : "—", inline: true },
+          { name: "تم حلها", value: String(stats.solved), inline: true },
+          { name: "الإخفاقات", value: String(stats.failed), inline: true },
+          { name: "السلسلة الحالية", value: String(stats.streak), inline: true },
+          { name: "أفضل سلسلة", value: String(stats.bestStreak), inline: true }
+        )]
+    });
+  }
+
+  private analysisLabel(classification: MoveClassification): string {
+    const labels: Record<MoveClassification, string> = {
+      best: "ممتازة",
+      excellent: "جيدة جدًا",
+      inaccuracy: "غير دقيقة",
+      mistake: "خطأ",
+      blunder: "خطأ كبير"
+    };
+    return labels[classification];
+  }
+
+  private async gameAnalysisPayload(result: GameAnalysisResult) {
+    const graph = await renderEvaluationGraph(result.whiteEvaluations);
+    const filename = "solichess-analysis.png";
+    const resultNames: Record<string, string> = {
+      win: "فوز",
+      checkmated: "خسارة بالمات",
+      resigned: "خسارة بالاستسلام",
+      timeout: "خسارة بالوقت",
+      agreed: "تعادل",
+      repetition: "تعادل بالتكرار",
+      stalemate: "تعادل بالخنق",
+      insufficient: "تعادل لنقص القطع",
+      "50move": "تعادل بقاعدة الخمسين"
+    };
+    const criticalFields = result.criticalMoves.slice(0, 3).map((move) => ({
+      name: `${result.color === "w" ? `${move.moveNumber}.` : `${move.moveNumber}...`} ${move.playedSan} — ${this.analysisLabel(move.classification)}`,
+      value: `الأفضل: **${move.bestSan}**\nالمسار: ${move.principalVariation || "—"}\nالخسارة التقريبية: ${move.centipawnLoss >= 10_000 ? "حاسمة" : (move.centipawnLoss / 100).toFixed(2)}`,
+      inline: false
+    }));
+    const embed = new EmbedBuilder()
+      .setColor(result.counts.blunder > 0 ? 0xed4245 : 0x57f287)
+      .setTitle(`مراجعة ${result.username} ضد ${result.opponent}`)
+      .setURL(result.gameUrl)
+      .setDescription(`النتيجة: **${resultNames[result.result] ?? result.result}** • ${result.timeClass}\nاللون: **${colorName(result.color)}**`)
+      .addFields(
+        { name: "الدقة التقديرية", value: `${result.approximateAccuracy}%`, inline: true },
+        { name: "متوسط خسارة السنتيبون", value: String(result.averageCentipawnLoss), inline: true },
+        { name: "النقلات المحللة", value: String(result.moveCount), inline: true },
+        { name: "غير دقيقة", value: String(result.counts.inaccuracy), inline: true },
+        { name: "أخطاء", value: String(result.counts.mistake), inline: true },
+        { name: "أخطاء كبيرة", value: String(result.counts.blunder), inline: true },
+        ...criticalFields
+      )
+      .setImage(`attachment://${filename}`)
+      .setFooter({ text: `Stockfish 18 Lite • عمق ${result.engineDepth} • الدقة تقدير خاص بـSoliChess وليست دقة Chess.com` });
+    return {
+      content: null,
+      embeds: [embed],
+      files: [new AttachmentBuilder(graph, { name: filename })]
+    };
+  }
+
+  private async handleAnalyze(interaction: ChatInputCommandInteraction): Promise<void> {
+    const link = this.db.getLinkByDiscord(interaction.guildId!, interaction.user.id);
+    if (!link) return void await replyError(interaction, "اربط حساب Chess.com أولًا قبل طلب التحليل.");
+    const key = `${interaction.guildId}:${interaction.user.id}`;
+    if (this.analysesInProgress.has(key)) return void await replyError(interaction, "يوجد تحليل لمباراتك قيد التنفيذ بالفعل.");
+    const waitMilliseconds = 60_000 - (Date.now() - (this.lastAnalysisAt.get(key) ?? 0));
+    if (waitMilliseconds > 0) {
+      return void await replyError(interaction, `انتظر ${Math.ceil(waitMilliseconds / 1000)} ثانية قبل طلب تحليل آخر.`);
+    }
+
+    this.analysesInProgress.add(key);
+    this.lastAnalysisAt.set(key, Date.now());
+    await interaction.deferReply();
+    await interaction.editReply("جاري جلب آخر مباراة مكتملة وتحليلها بواسطة Stockfish…");
+    try {
+      const game = await this.chess.getLatestCompletedGame(link.chessUsername);
+      const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
+      await interaction.editReply(await this.gameAnalysisPayload(result));
+      this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, result.gameUrl);
+      this.db.audit(interaction.guildId!, interaction.user.id, "game_analyzed", { gameUrl: result.gameUrl, depth: result.engineDepth });
+    } catch (error) {
+      console.error("Game analysis failed", error);
+      await interaction.editReply(`❌ ${userFacingError(error)}`);
+    } finally {
+      this.analysesInProgress.delete(key);
+    }
+  }
+
   private async handleSetup(interaction: ChatInputCommandInteraction): Promise<void> {
     if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
       return void await replyError(interaction, "تحتاج صلاحية Manage Server.");
@@ -305,7 +611,7 @@ export class ChessGateBot {
     this.db.upsertGuildSettings(settings);
     this.db.audit(interaction.guildId!, interaction.user.id, "guild_setup", { lockExisting, settings });
     await interaction.editReply(
-      `تم الإعداد. روم التحقق: <#${settings.verifyChannelId}>. ` +
+      `تم الإعداد. روم التحقق: <#${settings.verifyChannelId}>، وروم المراجعات التلقائية: <#${settings.analysisChannelId}>. ` +
       (lockExisting ? "تم قفل الرومات الحالية لغير الموثقين؛ راجعها بخيار View Server As Role." : "لم ألمس صلاحيات الرومات الحالية.")
     );
   }
@@ -425,6 +731,42 @@ export class ChessGateBot {
       this.db.deleteExpiredPending();
     } finally {
       this.monitorRunning = false;
+    }
+  }
+
+  private async monitorCompletedGames(): Promise<void> {
+    if (this.gameMonitorRunning) return;
+    this.gameMonitorRunning = true;
+    try {
+      for (const link of this.db.listLinks()) {
+        if (isClosedStatus(link.accountStatus)) continue;
+        const key = `${link.guildId}:${link.discordUserId}`;
+        if (this.analysesInProgress.has(key)) continue;
+        this.analysesInProgress.add(key);
+        try {
+          const game = await this.chess.getLatestCompletedGame(link.chessUsername);
+          if (game.url === link.lastAnalyzedGameUrl) continue;
+          const guild = await this.client.guilds.fetch(link.guildId);
+          const member = await guild.members.fetch(link.discordUserId).catch(() => null);
+          if (!member) continue;
+          const settings = this.db.getGuildSettings(link.guildId);
+          if (!settings) continue;
+          const channel = await guild.channels.fetch(settings.analysisChannelId).catch(() => null);
+          if (!channel?.isTextBased() || channel.isDMBased()) continue;
+
+          const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
+          const payload = await this.gameAnalysisPayload(result);
+          await channel.send({ ...payload, content: `♟️ مراجعة تلقائية لمباراة <@${link.discordUserId}> الجديدة` });
+          this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, game.url);
+          this.db.audit(link.guildId, link.discordUserId, "automatic_game_analysis", { gameUrl: game.url, depth: result.engineDepth });
+        } catch (error) {
+          console.error(`Automatic game analysis failed for ${link.guildId}/${link.discordUserId}`, error);
+        } finally {
+          this.analysesInProgress.delete(key);
+        }
+      }
+    } finally {
+      this.gameMonitorRunning = false;
     }
   }
 

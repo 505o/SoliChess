@@ -36,6 +36,16 @@ export const commandBuilders = [
         )
     ),
   new SlashCommandBuilder()
+    .setName("puzzle")
+    .setDescription("ابدأ لغز شطرنج تفاعليًا داخل ديسكورد"),
+  new SlashCommandBuilder()
+    .setName("puzzle-stats")
+    .setDescription("عرض تقييم وإحصائيات الألغاز")
+    .addUserOption((option) => option.setName("member").setDescription("العضو؛ اتركه فارغًا لعرض إحصائياتك")),
+  new SlashCommandBuilder()
+    .setName("analyze")
+    .setDescription("تحليل آخر مباراة Chess.com مكتملة للحساب المرتبط"),
+  new SlashCommandBuilder()
     .setName("refresh")
     .setDescription("تحديث بيانات Chess.com لعضو")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
