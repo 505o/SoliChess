@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import sharp from "sharp";
 import { renderBoard } from "../src/board-renderer.js";
 import type { LichessPuzzle } from "../src/lichess-puzzles.js";
 import { sessionFromPuzzle, submitPuzzleMove, updatedPuzzleRating } from "../src/puzzles.js";
@@ -41,4 +42,7 @@ test("board renderer produces a PNG", async () => {
   const board = await renderBoard(puzzle.fen, "b", puzzle.lastMove);
   assert.equal(board.subarray(1, 4).toString(), "PNG");
   assert.ok(board.length > 10_000);
+  const metadata = await sharp(board).metadata();
+  assert.equal(metadata.width, 1184);
+  assert.equal(metadata.height, 1120);
 });

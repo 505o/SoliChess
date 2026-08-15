@@ -1,14 +1,14 @@
 import { Chess, type Color, type PieceSymbol } from "chess.js";
 import sharp from "sharp";
 
-const PIECES: Record<Color, Record<PieceSymbol, string>> = {
-  w: { k: "♔", q: "♕", r: "♖", b: "♗", n: "♘", p: "♙" },
-  b: { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" }
-};
+const PIECES: Record<PieceSymbol, string> = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
-const BOARD_MARGIN = 48;
-const SQUARE = 80;
+const CANVAS_WIDTH = 1184;
+const CANVAS_HEIGHT = 1120;
+const BOARD_X = 80;
+const BOARD_Y = 32;
+const SQUARE = 132;
 const BOARD_SIZE = SQUARE * 8;
 
 function escapeXml(value: string): string {
@@ -26,8 +26,8 @@ function squareCenter(square: string, orientation: Color): { x: number; y: numbe
   const displayColumn = orientation === "w" ? file : 7 - file;
   const displayRow = orientation === "w" ? boardRow : 7 - boardRow;
   return {
-    x: BOARD_MARGIN + displayColumn * SQUARE + SQUARE / 2,
-    y: BOARD_MARGIN + displayRow * SQUARE + SQUARE / 2
+    x: BOARD_X + displayColumn * SQUARE + SQUARE / 2,
+    y: BOARD_Y + displayRow * SQUARE + SQUARE / 2
   };
 }
 
@@ -53,54 +53,74 @@ export async function renderBoard(
     for (let displayColumn = 0; displayColumn < 8; displayColumn += 1) {
       const boardRow = orientation === "w" ? displayRow : 7 - displayRow;
       const boardColumn = orientation === "w" ? displayColumn : 7 - displayColumn;
-      const x = BOARD_MARGIN + displayColumn * SQUARE;
-      const y = BOARD_MARGIN + displayRow * SQUARE;
+      const x = BOARD_X + displayColumn * SQUARE;
+      const y = BOARD_Y + displayRow * SQUARE;
       const name = squareName(boardRow, boardColumn);
       const light = (boardRow + boardColumn) % 2 === 0;
-      const fill = highlighted.has(name) ? "#d8b64c" : light ? "#e7e1d5" : "#67826f";
+      const fill = light ? "#e8ead8" : "#668876";
       squares.push(`<rect x="${x}" y="${y}" width="${SQUARE}" height="${SQUARE}" fill="${fill}"/>`);
+      if (highlighted.has(name)) {
+        squares.push(`<rect x="${x + 6}" y="${y + 6}" width="${SQUARE - 12}" height="${SQUARE - 12}" rx="13" fill="#f4c542" fill-opacity="0.62" stroke="#ffe382" stroke-width="4" stroke-opacity="0.85"/>`);
+      }
 
       const piece = position[boardRow]?.[boardColumn];
       if (piece) {
-        const glyph = PIECES[piece.color][piece.type];
-        const color = piece.color === "w" ? "#fafafa" : "#16181d";
-        const stroke = piece.color === "w" ? "#30343b" : "#e2e4e8";
+        const glyph = PIECES[piece.type];
+        const color = piece.color === "w" ? "#f8fafb" : "#20262d";
+        const stroke = piece.color === "w" ? "#26313a" : "#e4e9ec";
+        const strokeWidth = piece.color === "w" ? 3.5 : 1.8;
         pieces.push(
-          `<text x="${x + SQUARE / 2}" y="${y + 61}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI Symbol, serif" font-size="68" fill="${color}" stroke="${stroke}" stroke-width="1.4" paint-order="stroke">${glyph}</text>`
+          `<text x="${x + SQUARE / 2}" y="${y + 106}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI Symbol, serif" font-size="114" font-weight="700" fill="${color}" stroke="${stroke}" stroke-width="${strokeWidth}" paint-order="stroke" filter="url(#piece-shadow)">${glyph}</text>`
         );
       }
-    }
-  }
 
-  for (let index = 0; index < 8; index += 1) {
-    const fileIndex = orientation === "w" ? index : 7 - index;
-    const rank = orientation === "w" ? 8 - index : index + 1;
-    labels.push(`<text x="${BOARD_MARGIN + index * SQUARE + SQUARE / 2}" y="${BOARD_MARGIN + BOARD_SIZE + 30}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#aeb4be">${FILES[fileIndex]}</text>`);
-    labels.push(`<text x="22" y="${BOARD_MARGIN + index * SQUARE + 50}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#aeb4be">${rank}</text>`);
+      const coordinateColor = light ? "#668876" : "#e8ead8";
+      if (displayColumn === 0) {
+        const rank = orientation === "w" ? 8 - displayRow : displayRow + 1;
+        labels.push(`<text x="${x + 10}" y="${y + 27}" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="${coordinateColor}">${rank}</text>`);
+      }
+      if (displayRow === 7) {
+        const fileIndex = orientation === "w" ? displayColumn : 7 - displayColumn;
+        labels.push(`<text x="${x + SQUARE - 12}" y="${y + SQUARE - 10}" text-anchor="end" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="${coordinateColor}">${FILES[fileIndex]}</text>`);
+      }
+    }
   }
 
   let bestArrow = "";
   if (bestMove && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(bestMove)) {
     const from = squareCenter(bestMove.slice(0, 2), orientation);
     const to = squareCenter(bestMove.slice(2, 4), orientation);
-    bestArrow = `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="#43d17a" stroke-width="18" stroke-opacity="0.82" stroke-linecap="round" marker-end="url(#best-arrow)"/>`;
+    const distance = Math.hypot(to.x - from.x, to.y - from.y);
+    const unitX = (to.x - from.x) / distance;
+    const unitY = (to.y - from.y) / distance;
+    const startX = from.x + unitX * 32;
+    const startY = from.y + unitY * 32;
+    const endX = to.x - unitX * 46;
+    const endY = to.y - unitY * 46;
+    bestArrow = `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="#16251f" stroke-width="28" stroke-opacity="0.48" stroke-linecap="round"/>
+      <line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="#28d17c" stroke-width="16" stroke-opacity="0.94" stroke-linecap="round" marker-end="url(#best-arrow)"/>`;
   }
 
   let evaluationBar = "";
   if (whiteEvaluation !== undefined) {
     const normalized = Math.max(-1000, Math.min(1000, whiteEvaluation));
     const whiteShare = 1 / (1 + Math.exp(-normalized / 260));
-    const whiteHeight = Math.max(8, Math.min(632, BOARD_SIZE * whiteShare));
-    const whiteY = orientation === "w" ? BOARD_MARGIN + BOARD_SIZE - whiteHeight : BOARD_MARGIN;
-    evaluationBar = `<rect x="704" y="${BOARD_MARGIN}" width="20" height="${BOARD_SIZE}" rx="10" fill="#15171b"/>
-      <rect x="704" y="${whiteY}" width="20" height="${whiteHeight}" rx="10" fill="#f2f3f5"/>
-      <rect x="704" y="${BOARD_MARGIN}" width="20" height="${BOARD_SIZE}" rx="10" fill="none" stroke="#656b75" stroke-width="2"/>`;
+    const whiteHeight = Math.max(12, Math.min(BOARD_SIZE - 12, BOARD_SIZE * whiteShare));
+    const whiteY = orientation === "w" ? BOARD_Y + BOARD_SIZE - whiteHeight : BOARD_Y;
+    const splitY = orientation === "w" ? whiteY : whiteY + whiteHeight;
+    evaluationBar = `<rect x="22" y="${BOARD_Y}" width="34" height="${BOARD_SIZE}" rx="12" fill="#171b20"/>
+      <rect x="22" y="${whiteY}" width="34" height="${whiteHeight}" rx="12" fill="#f1f3f4"/>
+      <line x1="18" y1="${splitY}" x2="60" y2="${splitY}" stroke="#6ee7a0" stroke-width="7" stroke-linecap="round"/>
+      <rect x="22" y="${BOARD_Y}" width="34" height="${BOARD_SIZE}" rx="12" fill="none" stroke="#59616b" stroke-width="3"/>`;
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="736" height="736" viewBox="0 0 736 736">
-    <defs><marker id="best-arrow" markerWidth="5" markerHeight="5" refX="3.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#43d17a" fill-opacity="0.9"/></marker></defs>
-    <rect width="736" height="736" rx="24" fill="#171a20"/>
-    <rect x="40" y="40" width="656" height="656" rx="10" fill="#252932"/>
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" viewBox="0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}">
+    <defs>
+      <marker id="best-arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L4,2 L0,4 Z" fill="#28d17c"/></marker>
+      <filter id="piece-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#101419" flood-opacity="0.38"/></filter>
+    </defs>
+    <rect width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" rx="28" fill="#14181d"/>
+    <rect x="${BOARD_X - 7}" y="${BOARD_Y - 7}" width="${BOARD_SIZE + 14}" height="${BOARD_SIZE + 14}" rx="18" fill="#252b32"/>
     ${squares.join("")}
     ${bestArrow}
     ${pieces.join("")}

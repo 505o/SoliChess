@@ -602,13 +602,17 @@ export class ChessGateBot {
         `الدقة التقديرية: **${result.approximateAccuracy}%**\n\n${summary}`
       )
       .addFields(
-        { name: `النقلة ${move.ply}/${result.moves.length}`, value: `**${movePrefix} ${move.playedSan}**`, inline: true },
+        { name: `النقلة ${move.ply}/${result.moves.length}`, value: `\`${movePrefix} ${move.playedSan}\``, inline: true },
         { name: "تصنيف النقلة", value: `**${this.analysisLabel(move.classification)}**`, inline: true },
         { name: "تقييم المحرك", value: this.evaluationText(move.whiteEvaluation), inline: true },
-        { name: "أفضل نقلة", value: `**${move.bestSan}**`, inline: true },
+        { name: "أفضل نقلة", value: `\`${move.bestSan}\``, inline: true },
         { name: "خسارة النقلة", value: lossText, inline: true },
         { name: "متوسط خسارتك", value: `${(result.averageCentipawnLoss / 100).toFixed(2)} بيدق`, inline: true },
-        { name: "مسار Stockfish المقترح", value: move.principalVariation || "—", inline: false }
+        {
+          name: "مسار Stockfish المقترح",
+          value: move.principalVariation ? `\`\`\`\n${move.principalVariation}\n\`\`\`` : "—",
+          inline: false
+        }
       )
       .setImage(`attachment://${filename}`)
       .setFooter({ text: `السهم الأخضر = أفضل نقلة • Stockfish 18 Lite • عمق ${result.engineDepth} • التصنيفات تقديرية من SoliChess` });
