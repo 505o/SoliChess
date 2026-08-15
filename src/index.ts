@@ -1,11 +1,16 @@
 import { loadConfig } from "./config.js";
 import { ChessGateBot } from "./bot.js";
-import { AppDatabase } from "./database.js";
+import { NeonDatabase } from "./neon-database.js";
 import { AppHttpServer } from "./http-server.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const database = new AppDatabase(config.databasePath);
+  const database = await NeonDatabase.connect(
+    config.databaseUrl,
+    { auditRetentionDays: config.databaseRetentionDays },
+    config.databaseUrlDirect
+  );
+  console.log("Connected to Neon database");
   const bot = new ChessGateBot(config, database);
   const httpServer = new AppHttpServer();
   const httpPort = await httpServer.start(config.httpPort);
@@ -15,7 +20,7 @@ async function main(): Promise<void> {
     console.log(`Received ${signal}, shutting down...`);
     bot.client.destroy();
     await httpServer.stop();
-    database.close();
+    await database.close();
     process.exit(0);
   };
 
@@ -26,7 +31,7 @@ async function main(): Promise<void> {
     await bot.start();
   } catch (error) {
     await httpServer.stop();
-    database.close();
+    await database.close();
     throw error;
   }
 }

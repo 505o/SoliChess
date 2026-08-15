@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { GuildSettings, LinkRecord, PendingVerification, PuzzleSession, PuzzleStats } from "./types.js";
+import type { BotDatabase } from "./storage.js";
 
 interface GuildSettingsRow {
   guild_id: string;
@@ -167,7 +168,7 @@ function mapPuzzleStats(row: PuzzleStatsRow): PuzzleStats {
   };
 }
 
-export class AppDatabase {
+export class AppDatabase implements BotDatabase {
   private readonly db: DatabaseSync;
   private reportableChangeListener: (() => void) | null = null;
 
@@ -354,6 +355,11 @@ export class AppDatabase {
     return row ? mapPending(row) : null;
   }
 
+  listPending(): PendingVerification[] {
+    const rows = this.db.prepare("SELECT * FROM pending_verifications ORDER BY created_at").all() as unknown as PendingRow[];
+    return rows.map(mapPending);
+  }
+
   deletePending(guildId: string, discordUserId: string): void {
     this.db.prepare("DELETE FROM pending_verifications WHERE guild_id = ? AND discord_user_id = ?")
       .run(guildId, discordUserId);
@@ -485,6 +491,11 @@ export class AppDatabase {
     return row ? mapPuzzleSession(row) : null;
   }
 
+  listPuzzleSessions(): PuzzleSession[] {
+    const rows = this.db.prepare("SELECT * FROM puzzle_sessions ORDER BY started_at").all() as unknown as PuzzleSessionRow[];
+    return rows.map(mapPuzzleSession);
+  }
+
   deletePuzzleSession(guildId: string, discordUserId: string): void {
     this.db.prepare("DELETE FROM puzzle_sessions WHERE guild_id = ? AND discord_user_id = ?")
       .run(guildId, discordUserId);
@@ -593,6 +604,18 @@ export class AppDatabase {
     } : null;
   }
 
+  listReviewSessions(): PersistedReviewSession[] {
+    const rows = this.db.prepare("SELECT * FROM review_sessions ORDER BY expires_at").all() as unknown as ReviewSessionRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      guildId: row.guild_id,
+      resultJson: row.result_json,
+      currentIndex: row.current_index,
+      content: row.content,
+      expiresAt: row.expires_at
+    }));
+  }
+
   updateReviewSessionIndex(id: string, guildId: string, currentIndex: number): void {
     this.db.prepare(
       "UPDATE review_sessions SET current_index = ? WHERE id = ? AND guild_id = ?"
@@ -601,6 +624,10 @@ export class AppDatabase {
 
   deleteExpiredReviewSessions(now = Date.now()): number {
     return Number(this.db.prepare("DELETE FROM review_sessions WHERE expires_at < ?").run(now).changes);
+  }
+
+  async flush(): Promise<void> {
+    // SQLite writes are synchronous and durable before each method returns.
   }
 
   close(): void {

@@ -22,9 +22,11 @@ The bot monitors connected accounts for newly completed Chess.com games and post
 
 Administrators configure or replace the automatic review channel independently with `/setup-reviews`; manual `/analyze` requests do not suppress the automatic channel post.
 
-## Administration data
+## Data storage
 
-SoliChess can synchronize its administrative data to a private Google Sheet while retaining SQLite as the operational database. The sheet contains dedicated tabs for linked members and ratings, puzzle statistics, guild settings, audit records, and sync status. Changes are batched automatically, and administrators can request an immediate refresh with `/sync-sheets`. Temporary verification codes, credentials, OAuth secrets, and interactive-session payloads are never exported.
+SoliChess uses a private Neon Postgres database as its operational data store. It keeps only the identifiers and compact state required for verification, ratings, puzzles, moderation, and interactive reviews. Review payloads are compressed, expire after seven days, and are capped at 500 active sessions; administrative audit records expire after 90 days and are capped to control storage use. Images, Chess.com passwords, Discord passwords, and full game archives are not stored.
+
+The previous local SQLite database is used only as a retained migration backup and is not used while the bot is running.
 
 ## Account connection
 

@@ -92,6 +92,20 @@ export function ratingSnapshot(stats: ChessComStats): RatingSnapshot {
   };
 }
 
+export function compactStatsJson(stats: ChessComStats): string {
+  const compact: ChessComStats = {};
+  if (stats.chess_rapid?.last?.rating !== undefined) {
+    compact.chess_rapid = { last: { rating: stats.chess_rapid.last.rating, date: stats.chess_rapid.last.date ?? 0 } };
+  }
+  if (stats.chess_blitz?.last?.rating !== undefined) {
+    compact.chess_blitz = { last: { rating: stats.chess_blitz.last.rating, date: stats.chess_blitz.last.date ?? 0 } };
+  }
+  if (stats.chess_bullet?.last?.rating !== undefined) {
+    compact.chess_bullet = { last: { rating: stats.chess_bullet.last.rating, date: stats.chess_bullet.last.date ?? 0 } };
+  }
+  return JSON.stringify(compact);
+}
+
 export function isClosedStatus(status: string): boolean {
   return status.toLowerCase().startsWith("closed");
 }

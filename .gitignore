@@ -6,6 +6,4 @@ data/
 *.db-shm
 *.db-wal
 npm-debug.log*
-credentials/
-*-service-account.json
 !.env.example

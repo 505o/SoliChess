@@ -23,12 +23,11 @@ import {
   TextInputStyle
 } from "discord.js";
 import type { AppConfig } from "./config.js";
-import { ChessComApiError, ChessComClient, isClosedStatus, isFairPlayClosure, ratingSnapshot } from "./chesscom.js";
+import { ChessComApiError, ChessComClient, compactStatsJson, isClosedStatus, isFairPlayClosure, ratingSnapshot } from "./chesscom.js";
 import { commandJson } from "./commands.js";
-import { AppDatabase } from "./database.js";
+import type { BotDatabase } from "./storage.js";
 import { renderBoard } from "./board-renderer.js";
 import { analyzeCompletedGame, type GameAnalysisResult, type MoveClassification } from "./game-analysis.js";
-import { GoogleSheetsSync } from "./google-sheets.js";
 import { LichessPuzzleClient } from "./lichess-puzzles.js";
 import {
   colorName,
@@ -95,7 +94,6 @@ export class ChessGateBot {
   private readonly chess: ChessComClient;
   private readonly puzzles: LichessPuzzleClient;
   private readonly engine = new StockfishEngine();
-  private readonly sheetsSync: GoogleSheetsSync | null;
   private readonly analysesInProgress = new Set<string>();
   private readonly lastAnalysisAt = new Map<string, number>();
   private readonly reviewSessions = new Map<string, ReviewSession>();
@@ -104,12 +102,10 @@ export class ChessGateBot {
 
   constructor(
     private readonly config: AppConfig,
-    private readonly db: AppDatabase
+    private readonly db: BotDatabase
   ) {
     this.chess = new ChessComClient(config.chessComUserAgent);
     this.puzzles = new LichessPuzzleClient(config.chessComUserAgent);
-    this.sheetsSync = config.googleSheets ? new GoogleSheetsSync(config.googleSheets, db) : null;
-    if (this.sheetsSync) this.db.onReportableChange(() => this.sheetsSync?.requestSync());
   }
 
   async start(): Promise<void> {
@@ -118,11 +114,6 @@ export class ChessGateBot {
       await this.registerCommands();
       this.db.deleteExpiredPending();
       this.db.deleteExpiredReviewSessions();
-      if (this.sheetsSync) {
-        void this.sheetsSync.start()
-          .then((result) => console.log(`Google Sheets synced ${result.members} members`))
-          .catch((error: unknown) => console.error("Google Sheets startup sync failed", error));
-      }
       setInterval(() => void this.refreshAll(), this.config.checkIntervalMinutes * 60_000).unref();
       setInterval(() => void this.monitorCompletedGames(), this.config.gameCheckIntervalMinutes * 60_000).unref();
       void (async () => {
@@ -132,7 +123,7 @@ export class ChessGateBot {
     });
 
     this.client.on("interactionCreate", (interaction) => {
-      void this.handleInteraction(interaction).catch((error: unknown) => {
+      void this.handleInteraction(interaction).then(() => this.db.flush()).catch((error: unknown) => {
         console.error("Interaction failed", error);
         void replyError(interaction, userFacingError(error));
       });
@@ -179,7 +170,6 @@ export class ChessGateBot {
       case "puzzle-stats": return void await this.handlePuzzleStats(interaction);
       case "analyze": return void await this.handleAnalyze(interaction);
       case "setup-reviews": return void await this.handleSetupReviews(interaction);
-      case "sync-sheets": return void await this.handleSyncSheets(interaction);
       case "refresh": return void await this.handleRefresh(interaction);
       case "restore": return void await this.handleRestore(interaction);
       case "unlink": return void await this.handleUnlink(interaction);
@@ -309,7 +299,7 @@ export class ChessGateBot {
       verifiedVia: "profile_location_challenge",
       accountStatus: profile.status,
       lastCheckedAt: Date.now(),
-      lastStatsJson: JSON.stringify(stats),
+      lastStatsJson: compactStatsJson(stats),
       lastAnalyzedGameUrl: null
     };
 
@@ -784,30 +774,6 @@ export class ChessGateBot {
     void this.monitorCompletedGames();
   }
 
-  private async handleSyncSheets(interaction: ChatInputCommandInteraction): Promise<void> {
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-      return void await replyError(interaction, "تحتاج صلاحية Manage Server.");
-    }
-    if (!this.sheetsSync) {
-      return void await replyError(
-        interaction,
-        "مزامنة Google Sheets غير مهيأة بعد. أضف معرّف الشيت وملف حساب الخدمة إلى إعدادات البوت."
-      );
-    }
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    try {
-      const result = await this.sheetsSync.syncAll();
-      await interaction.editReply(
-        `✅ تمت المزامنة: **${result.members}** حساب، **${result.puzzleStats}** ملف ألغاز، و**${result.auditRecords}** سجل إداري.\n` +
-        `[فتح لوحة الإدارة في Google Sheets](${this.sheetsSync.spreadsheetUrl})`
-      );
-    } catch (error) {
-      console.error("Manual Google Sheets sync failed", error);
-      await interaction.editReply("❌ فشلت المزامنة. تأكد أن الشيت مشارك مع حساب الخدمة وأن Sheets API مفعلة.");
-    }
-  }
-
   private async handleProfile(interaction: ChatInputCommandInteraction): Promise<void> {
     const target = interaction.options.getUser("member") ?? interaction.user;
     const link = this.db.getLinkByDiscord(interaction.guildId!, target.id);
@@ -982,7 +948,7 @@ export class ChessGateBot {
       }
 
       const stats = await this.chess.getStats(profile.username);
-      this.db.updateLinkCheck(link.guildId, link.discordUserId, profile.username, profile.status, JSON.stringify(stats));
+      this.db.updateLinkCheck(link.guildId, link.discordUserId, profile.username, profile.status, compactStatsJson(stats));
       if (member && (!isClosedStatus(previousStatus) || forceRestore)) {
         await applyChessRoles(member, settings.verifiedRoleId, settings.reviewRoleId, ratingSnapshot(stats), profile);
       } else if (isClosedStatus(previousStatus) && previousStatus !== profile.status) {

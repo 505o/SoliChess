@@ -36,11 +36,11 @@ The bot does not use Chess.com data to provide assistance during an active game.
 
 ## Sharing and Sale of Data
 
-We do not sell personal information or use it for advertising. Information is only shared when necessary to operate the bot, including with Discord, Chess.com, Google Workspace when the private administration-sheet integration is enabled, infrastructure providers, or when required by law. Discord server administrators may view verification status, public Chess.com information, puzzle statistics, and relevant moderation records for members of their server. The administration sheet is restricted to the project owner, authorized server administrators, and the dedicated service account.
+We do not sell personal information or use it for advertising. Information is only shared when necessary to operate the bot, including with Discord, Chess.com, Neon as the private database infrastructure provider, or when required by law. Discord server administrators may view verification status, public Chess.com information, puzzle statistics, and relevant moderation records for members of their server. Database access is restricted to the project owner and the bot service.
 
 ## Data Retention
 
-Account-linking data is retained while needed to provide the service and enforce the one-account-per-member rule. Minimal identifiers and audit records may be retained after an administrative unlink to prevent abuse, resolve disputes, and maintain server security, unless deletion is required by applicable law. Temporary verification challenges expire automatically.
+Account-linking data is retained while needed to provide the service and enforce the one-account-per-member rule. Minimal identifiers may be retained after an administrative unlink to prevent abuse, resolve disputes, and maintain server security, unless deletion is required by applicable law. Temporary verification challenges expire automatically. Interactive game-review sessions expire after seven days. Administrative audit records are normally retained for up to 90 days and capped to limit database storage.
 
 ## Data Requests and Account Disconnection
 
@@ -62,7 +62,7 @@ Use of SoliChess also involves third-party services and is subject to their poli
 
 - [Chess.com Privacy Policy](https://www.chess.com/legal/privacy)
 - [Discord Privacy Policy](https://discord.com/privacy)
-- [Google Privacy Policy](https://policies.google.com/privacy)
+- [Neon Privacy Policy](https://neon.com/privacy-policy)
 
 ## Changes to This Policy
 
