@@ -26,10 +26,14 @@ function moveToUci(move: { from: string; to: string; promotion?: string }): stri
 }
 
 export class LichessPuzzleClient {
-  constructor(private readonly userAgent: string) {}
+  private readonly fetchHttp: typeof globalThis.fetch;
+
+  constructor(private readonly userAgent: string) {
+    this.fetchHttp = globalThis.fetch.bind(globalThis);
+  }
 
   async getNextPuzzle(): Promise<LichessPuzzle> {
-    const response = await fetch("https://lichess.org/api/puzzle/next", {
+    const response = await this.fetchHttp("https://lichess.org/api/puzzle/next", {
       headers: {
         Accept: "application/json",
         "User-Agent": this.userAgent

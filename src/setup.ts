@@ -13,7 +13,7 @@ import type { GuildSettings } from "./types.js";
 async function getOrCreateRole(guild: Guild, name: string, color: number): Promise<string> {
   const existing = guild.roles.cache.find((role) => role.name === name);
   if (existing) return existing.id;
-  const role = await guild.roles.create({ name, color, reason: "Chess Gate setup" });
+  const role = await guild.roles.create({ name, colors: { primaryColor: color }, reason: "Chess Gate setup" });
   return role.id;
 }
 

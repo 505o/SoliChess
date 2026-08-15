@@ -22,8 +22,11 @@ function cleanUsername(username: string): string {
 
 export class ChessComClient {
   private requestQueue: Promise<void> = Promise.resolve();
+  private readonly fetchHttp: typeof globalThis.fetch;
 
-  constructor(private readonly userAgent: string) {}
+  constructor(private readonly userAgent: string) {
+    this.fetchHttp = globalThis.fetch.bind(globalThis);
+  }
 
   private async get<T>(path: string): Promise<T> {
     return this.getUrl<T>(`${API_BASE}${path}`);
@@ -36,7 +39,7 @@ export class ChessComClient {
   }
 
   private async fetchUrl<T>(url: string): Promise<T> {
-    const response = await fetch(url, {
+    const response = await this.fetchHttp(url, {
       headers: {
         "User-Agent": this.userAgent,
         Accept: "application/json"

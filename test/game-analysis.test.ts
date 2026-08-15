@@ -14,6 +14,7 @@ test("move loss classification uses SoliChess thresholds", () => {
 });
 
 test("Stockfish analyzes a completed game and reports the requested player", async () => {
+  const nativeFetch = globalThis.fetch;
   const game: ChessComGame = {
     url: "https://www.chess.com/game/test",
     pgn: `[White "Alice"]
@@ -38,4 +39,5 @@ test("Stockfish analyzes a completed game and reports the requested player", asy
   assert.equal(result.moves.length, 4);
   assert.equal(result.moves.at(-1)?.playedSan, "Qh4#");
   assert.ok(result.moves.every((move) => Boolean(move.fenAfter)));
+  assert.equal(globalThis.fetch, nativeFetch, "Stockfish must not overwrite Node's global fetch");
 });

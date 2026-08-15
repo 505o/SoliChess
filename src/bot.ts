@@ -13,6 +13,7 @@ import {
   Guild,
   GuildMember,
   Interaction,
+  MessageFlags,
   ModalBuilder,
   ModalSubmitInteraction,
   PermissionFlagsBits,
@@ -79,7 +80,7 @@ function parseStoredRatings(link: LinkRecord): RatingSnapshot {
 
 async function replyError(interaction: Interaction, message: string): Promise<void> {
   if (!interaction.isRepliable()) return;
-  const payload = { content: `❌ ${message}`, ephemeral: true } as const;
+  const payload = { content: `❌ ${message}`, flags: MessageFlags.Ephemeral } as const;
   if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
   else await interaction.reply(payload);
 }
@@ -177,7 +178,7 @@ export class ChessGateBot {
     if (existing) {
       return void await interaction.reply({
         content: `حسابك مرتبط بشكل دائم بـ **${existing.chessUsername}**. لا يمكن تغييره من طرف العضو.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -199,7 +200,7 @@ export class ChessGateBot {
   }
 
   private async beginLink(interaction: ModalSubmitInteraction): Promise<void> {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const guildId = interaction.guildId!;
     const discordUserId = interaction.user.id;
 
@@ -259,7 +260,7 @@ export class ChessGateBot {
   }
 
   private async checkChallenge(interaction: ButtonInteraction): Promise<void> {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const guildId = interaction.guildId!;
     const pending = this.db.getPending(guildId, interaction.user.id);
     if (!pending) return void await interaction.editReply("لا يوجد طلب تحقق نشط. ابدأ الربط من جديد.");
@@ -417,7 +418,7 @@ export class ChessGateBot {
   private async handlePuzzleButton(interaction: ButtonInteraction): Promise<void> {
     const [action, ownerId] = interaction.customId.split(":", 2);
     if (!ownerId || ownerId !== interaction.user.id) {
-      return void await interaction.reply({ content: "هذا اللغز يخص عضوًا آخر. استخدم `/puzzle` لبدء لغزك.", ephemeral: true });
+      return void await interaction.reply({ content: "هذا اللغز يخص عضوًا آخر. استخدم `/puzzle` لبدء لغزك.", flags: MessageFlags.Ephemeral });
     }
 
     if (action === "puzzle_next") {
@@ -428,10 +429,10 @@ export class ChessGateBot {
     }
 
     const session = this.db.getPuzzleSession(interaction.guildId!, ownerId);
-    if (!session) return void await interaction.reply({ content: "انتهت جلسة اللغز. ابدأ لغزًا جديدًا.", ephemeral: true });
+    if (!session) return void await interaction.reply({ content: "انتهت جلسة اللغز. ابدأ لغزًا جديدًا.", flags: MessageFlags.Ephemeral });
 
     if (action === "puzzle_hint") {
-      return void await interaction.reply({ content: `💡 ${puzzleHint(session)}`, ephemeral: true });
+      return void await interaction.reply({ content: `💡 ${puzzleHint(session)}`, flags: MessageFlags.Ephemeral });
     }
 
     if (action === "puzzle_giveup") {
@@ -472,12 +473,12 @@ export class ChessGateBot {
     try {
       result = submitPuzzleMove(session, input);
     } catch {
-      return void await interaction.reply({ content: "هذه النقلة غير قانونية أو صيغتها غير صحيحة. جرّب مثل `Nf7+` أو `e2e4`.", ephemeral: true });
+      return void await interaction.reply({ content: "هذه النقلة غير قانونية أو صيغتها غير صحيحة. جرّب مثل `Nf7+` أو `e2e4`.", flags: MessageFlags.Ephemeral });
     }
 
     if (result.kind === "wrong") {
       this.recordPuzzleFailure(result.session);
-      return void await interaction.reply({ content: "❌ ليست أفضل نقلة. خسر اللغز تقييمه، لكن تستطيع المحاولة مرة أخرى.", ephemeral: true });
+      return void await interaction.reply({ content: "❌ ليست أفضل نقلة. خسر اللغز تقييمه، لكن تستطيع المحاولة مرة أخرى.", flags: MessageFlags.Ephemeral });
     }
 
     if (result.kind === "continue") {
@@ -676,10 +677,10 @@ export class ChessGateBot {
     if (existingSettings) {
       return void await interaction.reply({
         content: `النظام معد مسبقًا وروم الربط هو <#${existingSettings.verifyChannelId}>. لن أعيد إنشاء الرومات تلقائيًا.`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const lockExisting = interaction.options.getBoolean("lock_existing", true);
     const logChannel = interaction.options.getChannel("log_channel");
     const settings = await setupGuild(interaction.guild!, lockExisting, logChannel?.id);
@@ -750,7 +751,7 @@ export class ChessGateBot {
     const user = interaction.options.getUser("member", true);
     const link = this.db.getLinkByDiscord(interaction.guildId!, user.id);
     if (!link) return void await replyError(interaction, "هذا العضو غير مرتبط.");
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await this.refreshLink(link, true);
     await interaction.editReply(
       isClosedStatus(link.accountStatus)
@@ -763,7 +764,7 @@ export class ChessGateBot {
     const user = interaction.options.getUser("member", true);
     const link = this.db.getLinkByDiscord(interaction.guildId!, user.id);
     if (!link) return void await replyError(interaction, "هذا العضو غير مرتبط.");
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const profile = await this.chess.getProfile(link.chessUsername);
     if (isClosedStatus(profile.status)) {
       return void await interaction.editReply(`لا يمكن إعادته؛ الحساب ما زال: **${statusLabel(profile.status)}**.`);
@@ -781,7 +782,7 @@ export class ChessGateBot {
     const existing = this.db.getLinkByDiscord(interaction.guildId!, user.id);
     if (!existing) return void await replyError(interaction, "هذا العضو غير مرتبط.");
 
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const member = await interaction.guild!.members.fetch(user.id).catch(() => null);
     if (member && settings) {
       const managedIds = member.roles.cache

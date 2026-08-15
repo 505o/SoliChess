@@ -34,7 +34,16 @@ export class StockfishEngine {
   }
 
   private getEngine(): Promise<StockfishModule> {
-    this.enginePromise ??= initializeStockfish("lite-single");
+    if (!this.enginePromise) {
+      const nativeFetch = globalThis.fetch;
+      try {
+        this.enginePromise = initializeStockfish("lite-single");
+      } finally {
+        // The Stockfish Node bundle sets the process-wide fetch global to null.
+        // Restore Node's native implementation so Chess.com and Lichess keep working.
+        globalThis.fetch = nativeFetch;
+      }
+    }
     return this.enginePromise;
   }
 
