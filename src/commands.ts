@@ -46,6 +46,16 @@ export const commandBuilders = [
     .setName("analyze")
     .setDescription("تحليل آخر مباراة Chess.com مكتملة للحساب المرتبط"),
   new SlashCommandBuilder()
+    .setName("setup-reviews")
+    .setDescription("إعداد روم مراجعات المباريات التلقائية")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption((option) =>
+      option
+        .setName("channel")
+        .setDescription("روم المراجعات؛ اتركه فارغًا ليُنشئ البوت رومًا جديدًا")
+        .addChannelTypes(ChannelType.GuildText)
+    ),
+  new SlashCommandBuilder()
     .setName("refresh")
     .setDescription("تحديث بيانات Chess.com لعضو")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

@@ -39,7 +39,7 @@ import {
   updatedPuzzleRating
 } from "./puzzles.js";
 import { applyChessRoles, isManagedRatingRole, quarantineMember } from "./rating-roles.js";
-import { setupGuild } from "./setup.js";
+import { setupAnalysisChannel, setupGuild } from "./setup.js";
 import { StockfishEngine } from "./stockfish.js";
 import type { ChessComProfile, ChessComStats, LinkRecord, PuzzleSession, RatingSnapshot, TimeClass } from "./types.js";
 
@@ -167,6 +167,7 @@ export class ChessGateBot {
       case "puzzle": return void await this.handlePuzzle(interaction);
       case "puzzle-stats": return void await this.handlePuzzleStats(interaction);
       case "analyze": return void await this.handleAnalyze(interaction);
+      case "setup-reviews": return void await this.handleSetupReviews(interaction);
       case "refresh": return void await this.handleRefresh(interaction);
       case "restore": return void await this.handleRestore(interaction);
       case "unlink": return void await this.handleUnlink(interaction);
@@ -659,7 +660,6 @@ export class ChessGateBot {
       const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
       const review = this.createReviewSession(result, null);
       await interaction.editReply(await this.gameAnalysisPayload(review.id, review.session));
-      this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, result.gameUrl);
       this.db.audit(interaction.guildId!, interaction.user.id, "game_analyzed", { gameUrl: result.gameUrl, depth: result.engineDepth });
     } catch (error) {
       console.error("Game analysis failed", error);
@@ -690,6 +690,39 @@ export class ChessGateBot {
       `تم الإعداد. روم التحقق: <#${settings.verifyChannelId}>، وروم المراجعات التلقائية: <#${settings.analysisChannelId}>. ` +
       (lockExisting ? "تم قفل الرومات الحالية لغير الموثقين؛ راجعها بخيار View Server As Role." : "لم ألمس صلاحيات الرومات الحالية.")
     );
+  }
+
+  private async handleSetupReviews(interaction: ChatInputCommandInteraction): Promise<void> {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      return void await replyError(interaction, "تحتاج صلاحية Manage Server.");
+    }
+    const settings = this.db.getGuildSettings(interaction.guildId!);
+    if (!settings) return void await replyError(interaction, "شغّل /setup أولًا لإعداد نظام التحقق الأساسي.");
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const requestedChannel = interaction.options.getChannel("channel");
+    const analysisChannelId = await setupAnalysisChannel(interaction.guild!, settings.verifiedRoleId, requestedChannel?.id);
+    this.db.upsertGuildSettings({ ...settings, analysisChannelId });
+    this.db.audit(interaction.guildId!, interaction.user.id, "analysis_channel_configured", { analysisChannelId });
+
+    const channel = await interaction.guild!.channels.fetch(analysisChannelId);
+    if (channel?.isTextBased() && !channel.isDMBased()) {
+      await channel.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("✅ تم تفعيل مراجعات المباريات التلقائية")
+          .setDescription(
+            `سيراقب SoliChess مباريات الأعضاء المرتبطين كل **${this.config.gameCheckIntervalMinutes} دقيقة**، ` +
+            "وعند اكتشاف مباراة مكتملة جديدة سينشر مراجعة Stockfish التفاعلية هنا."
+          )
+          .setFooter({ text: "لن تُعاد مراجعة مباراة سبق تحليلها" })]
+      });
+    }
+
+    await interaction.editReply(
+      `تم اعتماد <#${analysisChannelId}> للمراجعات التلقائية. ستظهر المباراة الجديدة بعد اكتمالها خلال ${this.config.gameCheckIntervalMinutes} دقيقة كحد أقصى.`
+    );
+    void this.monitorCompletedGames();
   }
 
   private async handleProfile(interaction: ChatInputCommandInteraction): Promise<void> {

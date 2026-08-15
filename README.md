@@ -20,6 +20,8 @@ Members can solve interactive tactical puzzles directly in Discord using rendere
 
 The bot monitors connected accounts for newly completed Chess.com games and posts one automatic review in a dedicated Discord channel. Members can also request the latest review manually. Reviews are powered by Stockfish and open on the final board position with interactive move navigation, an evaluation bar, the engine's best move and principal variation, and SoliChess move classifications such as brilliant, best, inaccuracy, mistake, and blunder.
 
+Administrators configure or replace the automatic review channel independently with `/setup-reviews`; manual `/analyze` requests do not suppress the automatic channel post.
+
 ## Account connection
 
 SoliChess currently includes a temporary profile-based ownership challenge for development. The intended production flow uses Chess.com OAuth so members can confirm account ownership without sharing passwords or relying on editable profile information.

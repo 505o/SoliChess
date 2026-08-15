@@ -17,6 +17,36 @@ async function getOrCreateRole(guild: Guild, name: string, color: number): Promi
   return role.id;
 }
 
+export async function setupAnalysisChannel(
+  guild: Guild,
+  verifiedRoleId: string,
+  requestedChannelId?: string
+): Promise<string> {
+  const existing = requestedChannelId
+    ? await guild.channels.fetch(requestedChannelId)
+    : guild.channels.cache.find((channel) => channel.type === ChannelType.GuildText && channel.name === "مراجعات-المباريات");
+  const channel = existing ?? await guild.channels.create({
+    name: "مراجعات-المباريات",
+    type: ChannelType.GuildText,
+    reason: "SoliChess automatic post-game reviews"
+  });
+  if (channel.type !== ChannelType.GuildText) throw new Error("روم المراجعات يجب أن يكون رومًا كتابيًا عاديًا.");
+
+  await channel.permissionOverwrites.edit(guild.roles.everyone.id, { ViewChannel: false }, { reason: "SoliChess review channel" });
+  await channel.permissionOverwrites.edit(verifiedRoleId, {
+    ViewChannel: true,
+    ReadMessageHistory: true
+  }, { reason: "SoliChess review channel" });
+  await channel.permissionOverwrites.edit(guild.client.user.id, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    EmbedLinks: true,
+    AttachFiles: true
+  }, { reason: "SoliChess review channel" });
+  return channel.id;
+}
+
 export async function setupGuild(
   guild: Guild,
   lockExisting: boolean,
@@ -76,29 +106,11 @@ export async function setupGuild(
     logChannelId = logs.id;
   }
 
-  const analysisChannel = await guild.channels.create({
-    name: "مراجعات-المباريات",
-    type: ChannelType.GuildText,
-    permissionOverwrites: [
-      { id: everyoneId, deny: [PermissionFlagsBits.ViewChannel] },
-      { id: verifiedRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
-      {
-        id: botUserId,
-        allow: [
-          PermissionFlagsBits.ViewChannel,
-          PermissionFlagsBits.SendMessages,
-          PermissionFlagsBits.ReadMessageHistory,
-          PermissionFlagsBits.EmbedLinks,
-          PermissionFlagsBits.AttachFiles
-        ]
-      }
-    ],
-    reason: "SoliChess automatic post-game reviews"
-  });
+  const analysisChannelId = await setupAnalysisChannel(guild, verifiedRoleId);
 
   if (lockExisting) {
     for (const channel of guild.channels.cache.values()) {
-      if (channel.id === category.id || channel.parentId === category.id || channel.id === logChannelId || channel.id === analysisChannel.id) continue;
+      if (channel.id === category.id || channel.parentId === category.id || channel.id === logChannelId || channel.id === analysisChannelId) continue;
       if (channel.isThread()) continue;
       await channel.permissionOverwrites.edit(everyoneId, { ViewChannel: false }, { reason: "Mandatory Chess.com verification" });
       await channel.permissionOverwrites.edit(verifiedRoleId, { ViewChannel: true }, { reason: "Mandatory Chess.com verification" });
@@ -147,6 +159,6 @@ export async function setupGuild(
     rulesChannelId: verify.id,
     verifyChannelId: verify.id,
     logChannelId,
-    analysisChannelId: analysisChannel.id
+    analysisChannelId
   };
 }
