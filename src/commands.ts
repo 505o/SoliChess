@@ -56,6 +56,10 @@ export const commandBuilders = [
         .addChannelTypes(ChannelType.GuildText)
     ),
   new SlashCommandBuilder()
+    .setName("sync-sheets")
+    .setDescription("مزامنة بيانات إدارة البوت مع Google Sheets الآن")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  new SlashCommandBuilder()
     .setName("refresh")
     .setDescription("تحديث بيانات Chess.com لعضو")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

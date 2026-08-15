@@ -62,6 +62,24 @@ interface PuzzleStatsRow {
   updated_at: number;
 }
 
+interface AuditLogRow {
+  id: number;
+  guild_id: string;
+  discord_user_id: string | null;
+  action: string;
+  details: string;
+  created_at: number;
+}
+
+export interface AuditLogRecord {
+  id: number;
+  guildId: string;
+  discordUserId: string | null;
+  action: string;
+  details: string;
+  createdAt: number;
+}
+
 interface ReviewSessionRow {
   id: string;
   guild_id: string;
@@ -151,6 +169,7 @@ function mapPuzzleStats(row: PuzzleStatsRow): PuzzleStats {
 
 export class AppDatabase {
   private readonly db: DatabaseSync;
+  private reportableChangeListener: (() => void) | null = null;
 
   constructor(databasePath: string) {
     mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -259,6 +278,14 @@ export class AppDatabase {
     }
   }
 
+  onReportableChange(listener: () => void): void {
+    this.reportableChangeListener = listener;
+  }
+
+  private reportableChanged(): void {
+    this.reportableChangeListener?.();
+  }
+
   upsertGuildSettings(settings: GuildSettings): void {
     this.db.prepare(`
       INSERT INTO guild_settings (
@@ -284,11 +311,17 @@ export class AppDatabase {
       settings.analysisChannelId,
       Date.now()
     );
+    this.reportableChanged();
   }
 
   getGuildSettings(guildId: string): GuildSettings | null {
     const row = this.db.prepare("SELECT * FROM guild_settings WHERE guild_id = ?").get(guildId) as GuildSettingsRow | undefined;
     return row ? mapGuild(row) : null;
+  }
+
+  listGuildSettings(): GuildSettings[] {
+    const rows = this.db.prepare("SELECT * FROM guild_settings ORDER BY guild_id").all() as unknown as GuildSettingsRow[];
+    return rows.map(mapGuild);
   }
 
   savePending(pending: PendingVerification): void {
@@ -364,6 +397,7 @@ export class AppDatabase {
       );
       this.deletePending(link.guildId, link.discordUserId);
       this.db.exec("COMMIT");
+      this.reportableChanged();
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
@@ -381,6 +415,7 @@ export class AppDatabase {
       UPDATE links SET chess_username = ?, account_status = ?, last_checked_at = ?, last_stats_json = ?
       WHERE guild_id = ? AND discord_user_id = ?
     `).run(chessUsername, status, Date.now(), statsJson, guildId, discordUserId);
+    this.reportableChanged();
   }
 
   listLinks(guildId?: string): LinkRecord[] {
@@ -391,14 +426,17 @@ export class AppDatabase {
   }
 
   deleteLink(guildId: string, discordUserId: string): boolean {
-    return Number(this.db.prepare("DELETE FROM links WHERE guild_id = ? AND discord_user_id = ?")
+    const deleted = Number(this.db.prepare("DELETE FROM links WHERE guild_id = ? AND discord_user_id = ?")
       .run(guildId, discordUserId).changes) > 0;
+    if (deleted) this.reportableChanged();
+    return deleted;
   }
 
   updateLastAnalyzedGame(guildId: string, discordUserId: string, gameUrl: string): void {
     this.db.prepare(`
       UPDATE links SET last_analyzed_game_url = ? WHERE guild_id = ? AND discord_user_id = ?
     `).run(gameUrl, guildId, discordUserId);
+    this.reportableChanged();
   }
 
   audit(guildId: string, discordUserId: string | null, action: string, details: unknown): void {
@@ -406,6 +444,7 @@ export class AppDatabase {
       INSERT INTO audit_log (guild_id, discord_user_id, action, details, created_at)
       VALUES (?, ?, ?, ?, ?)
     `).run(guildId, discordUserId, action, JSON.stringify(details), Date.now());
+    this.reportableChanged();
   }
 
   savePuzzleSession(session: PuzzleSession): void {
@@ -489,6 +528,7 @@ export class AppDatabase {
       stats.bestStreak,
       stats.updatedAt
     );
+    this.reportableChanged();
   }
 
   listPuzzleStats(guildId: string): PuzzleStats[] {
@@ -496,6 +536,28 @@ export class AppDatabase {
       "SELECT * FROM puzzle_stats WHERE guild_id = ? ORDER BY rating DESC, solved DESC LIMIT 20"
     ).all(guildId) as unknown as PuzzleStatsRow[];
     return rows.map(mapPuzzleStats);
+  }
+
+  listAllPuzzleStats(): PuzzleStats[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM puzzle_stats ORDER BY guild_id, rating DESC, solved DESC"
+    ).all() as unknown as PuzzleStatsRow[];
+    return rows.map(mapPuzzleStats);
+  }
+
+  listAuditLog(limit = 5_000): AuditLogRecord[] {
+    const safeLimit = Math.max(1, Math.min(20_000, Math.trunc(limit)));
+    const rows = this.db.prepare(
+      "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?"
+    ).all(safeLimit) as unknown as AuditLogRow[];
+    return rows.reverse().map((row) => ({
+      id: row.id,
+      guildId: row.guild_id,
+      discordUserId: row.discord_user_id,
+      action: row.action,
+      details: row.details,
+      createdAt: row.created_at
+    }));
   }
 
   saveReviewSession(session: PersistedReviewSession): void {

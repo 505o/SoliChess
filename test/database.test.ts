@@ -25,6 +25,8 @@ test("database enforces one Discord and one Chess.com account per guild", () => 
 
     assert.equal(database.getLinkByDiscord("guild-1", "discord-1")?.chessPlayerId, 101);
     assert.equal(database.getLinkByChessPlayer("guild-1", 101)?.discordUserId, "discord-1");
+    database.audit("guild-1", "discord-1", "test_action", { safe: true });
+    assert.equal(database.listAuditLog()[0]?.action, "test_action");
 
     assert.throws(() => database.createLink({
       guildId: "guild-1",
@@ -66,9 +68,13 @@ test("database persists puzzle sessions and stats", () => {
     const stats = database.getPuzzleStats("guild-1", "discord-1");
     stats.rating = 1216;
     stats.solved = 1;
+    let reportableChanges = 0;
+    database.onReportableChange(() => { reportableChanges += 1; });
     database.savePuzzleStats(stats);
     assert.equal(database.getPuzzleStats("guild-1", "discord-1").rating, 1216);
     assert.equal(database.listPuzzleStats("guild-1")[0]?.solved, 1);
+    assert.equal(database.listAllPuzzleStats()[0]?.discordUserId, "discord-1");
+    assert.equal(reportableChanges, 1);
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });

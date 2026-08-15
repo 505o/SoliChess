@@ -22,6 +22,10 @@ The bot monitors connected accounts for newly completed Chess.com games and post
 
 Administrators configure or replace the automatic review channel independently with `/setup-reviews`; manual `/analyze` requests do not suppress the automatic channel post.
 
+## Administration data
+
+SoliChess can synchronize its administrative data to a private Google Sheet while retaining SQLite as the operational database. The sheet contains dedicated tabs for linked members and ratings, puzzle statistics, guild settings, audit records, and sync status. Changes are batched automatically, and administrators can request an immediate refresh with `/sync-sheets`. Temporary verification codes, credentials, OAuth secrets, and interactive-session payloads are never exported.
+
 ## Account connection
 
 SoliChess currently includes a temporary profile-based ownership challenge for development. The intended production flow uses Chess.com OAuth so members can confirm account ownership without sharing passwords or relying on editable profile information.

@@ -1,6 +1,6 @@
 # SoliChess Privacy Policy
 
-**Effective date:** August 14, 2026
+**Effective date:** August 15, 2026
 
 SoliChess is a Discord bot that connects a Discord member to their Chess.com account, assigns chess-related server roles, and helps server administrators manage account verification. This policy explains what data the bot processes and how it is used.
 
@@ -36,7 +36,7 @@ The bot does not use Chess.com data to provide assistance during an active game.
 
 ## Sharing and Sale of Data
 
-We do not sell personal information or use it for advertising. Information is only shared when necessary to operate the bot, including with Discord, Chess.com, infrastructure providers, or when required by law. Discord server administrators may view verification status, public Chess.com information, and relevant moderation records for members of their server.
+We do not sell personal information or use it for advertising. Information is only shared when necessary to operate the bot, including with Discord, Chess.com, Google Workspace when the private administration-sheet integration is enabled, infrastructure providers, or when required by law. Discord server administrators may view verification status, public Chess.com information, puzzle statistics, and relevant moderation records for members of their server. The administration sheet is restricted to the project owner, authorized server administrators, and the dedicated service account.
 
 ## Data Retention
 
@@ -62,6 +62,7 @@ Use of SoliChess also involves third-party services and is subject to their poli
 
 - [Chess.com Privacy Policy](https://www.chess.com/legal/privacy)
 - [Discord Privacy Policy](https://discord.com/privacy)
+- [Google Privacy Policy](https://policies.google.com/privacy)
 
 ## Changes to This Policy
 

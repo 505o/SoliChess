@@ -12,6 +12,11 @@ export interface AppConfig {
   httpPort: number;
   engineDepth: number;
   gameCheckIntervalMinutes: number;
+  googleSheets?: {
+    spreadsheetId: string;
+    serviceAccountKeyFile: string;
+    syncMinutes: number;
+  };
 }
 
 function required(name: string): string {
@@ -32,6 +37,11 @@ function positiveInteger(name: string, fallback: number): number {
 
 export function loadConfig(): AppConfig {
   const guildId = process.env.DISCORD_GUILD_ID?.trim();
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID?.trim();
+  const serviceAccountKeyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE?.trim();
+  if (Boolean(spreadsheetId) !== Boolean(serviceAccountKeyFile)) {
+    throw new Error("GOOGLE_SHEETS_SPREADSHEET_ID and GOOGLE_SERVICE_ACCOUNT_KEY_FILE must be configured together");
+  }
   return {
     discordToken: required("DISCORD_TOKEN"),
     discordClientId: required("DISCORD_CLIENT_ID"),
@@ -42,6 +52,13 @@ export function loadConfig(): AppConfig {
     verificationTtlMinutes: positiveInteger("VERIFICATION_TTL_MINUTES", 30),
     httpPort: positiveInteger("HTTP_PORT", 3000),
     engineDepth: positiveInteger("ENGINE_DEPTH", 10),
-    gameCheckIntervalMinutes: positiveInteger("GAME_CHECK_INTERVAL_MINUTES", 15)
+    gameCheckIntervalMinutes: positiveInteger("GAME_CHECK_INTERVAL_MINUTES", 15),
+    ...(spreadsheetId && serviceAccountKeyFile ? {
+      googleSheets: {
+        spreadsheetId,
+        serviceAccountKeyFile: path.resolve(serviceAccountKeyFile),
+        syncMinutes: positiveInteger("GOOGLE_SHEETS_SYNC_MINUTES", 5)
+      }
+    } : {})
   };
 }
