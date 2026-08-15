@@ -5,6 +5,7 @@ import {
   ButtonBuilder,
   ButtonInteraction,
   ButtonStyle,
+  ChannelType,
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
@@ -13,6 +14,7 @@ import {
   Guild,
   GuildMember,
   Interaction,
+  type InteractionReplyOptions,
   MessageFlags,
   ModalBuilder,
   ModalSubmitInteraction,
@@ -41,13 +43,26 @@ import {
 import { applyChessRoles, isManagedRatingRole, quarantineMember } from "./rating-roles.js";
 import { setupAnalysisChannel, setupGuild } from "./setup.js";
 import { StockfishEngine } from "./stockfish.js";
-import type { ChessComProfile, ChessComStats, LinkRecord, PuzzleSession, RatingSnapshot, TimeClass } from "./types.js";
+import type {
+  ChessComProfile,
+  ChessComStats,
+  DailyPuzzleAttempt,
+  DailyPuzzleChallenge,
+  DailyPuzzleSettings,
+  LinkRecord,
+  PuzzleSession,
+  RatingSnapshot,
+  TimeClass
+} from "./types.js";
 
 const LINK_MODAL_ID = "chess_link_modal";
 const CHECK_BUTTON_ID = "chess_link_check";
 const PUZZLE_MOVE_PREFIX = "puzzle_move:";
 const PUZZLE_MODAL_PREFIX = "puzzle_move_modal:";
 const REVIEW_BUTTON_PREFIX = "review_";
+const DAILY_PUZZLE_OPEN_PREFIX = "daily_open:";
+const DAILY_PUZZLE_ANSWER_PREFIX = "daily_answer:";
+const DAILY_PUZZLE_MODAL_PREFIX = "daily_modal:";
 
 interface ReviewSession {
   result: GameAnalysisResult;
@@ -99,6 +114,7 @@ export class ChessGateBot {
   private readonly reviewSessions = new Map<string, ReviewSession>();
   private monitorRunning = false;
   private gameMonitorRunning = false;
+  private dailyPuzzleMonitorRunning = false;
 
   constructor(
     private readonly config: AppConfig,
@@ -116,9 +132,11 @@ export class ChessGateBot {
       this.db.deleteExpiredReviewSessions();
       setInterval(() => void this.refreshAll(), this.config.checkIntervalMinutes * 60_000).unref();
       setInterval(() => void this.monitorCompletedGames(), this.config.gameCheckIntervalMinutes * 60_000).unref();
+      setInterval(() => void this.monitorDailyPuzzles(), 60_000).unref();
       void (async () => {
         await this.refreshAll();
         await this.monitorCompletedGames();
+        await this.monitorDailyPuzzles();
       })();
     });
 
@@ -150,6 +168,9 @@ export class ChessGateBot {
     if (interaction.isButton()) {
       if (interaction.customId === "chess_link_start") return void await this.openLinkModal(interaction);
       if (interaction.customId === CHECK_BUTTON_ID) return void await this.checkChallenge(interaction);
+      if (interaction.customId.startsWith(DAILY_PUZZLE_OPEN_PREFIX) || interaction.customId.startsWith(DAILY_PUZZLE_ANSWER_PREFIX)) {
+        return void await this.handleDailyPuzzleButton(interaction);
+      }
       if (interaction.customId.startsWith(REVIEW_BUTTON_PREFIX)) return void await this.handleReviewButton(interaction);
       if (interaction.customId.startsWith("puzzle_")) return void await this.handlePuzzleButton(interaction);
     }
@@ -159,6 +180,9 @@ export class ChessGateBot {
     }
     if (interaction.isModalSubmit() && interaction.customId.startsWith(PUZZLE_MODAL_PREFIX)) {
       return void await this.handlePuzzleMove(interaction);
+    }
+    if (interaction.isModalSubmit() && interaction.customId.startsWith(DAILY_PUZZLE_MODAL_PREFIX)) {
+      return void await this.handleDailyPuzzleMove(interaction);
     }
 
     if (!interaction.isChatInputCommand()) return;
@@ -170,6 +194,7 @@ export class ChessGateBot {
       case "puzzle-stats": return void await this.handlePuzzleStats(interaction);
       case "analyze": return void await this.handleAnalyze(interaction);
       case "setup-reviews": return void await this.handleSetupReviews(interaction);
+      case "setup-daily-puzzle": return void await this.handleSetupDailyPuzzle(interaction);
       case "refresh": return void await this.handleRefresh(interaction);
       case "restore": return void await this.handleRestore(interaction);
       case "unlink": return void await this.handleUnlink(interaction);
@@ -526,6 +551,341 @@ export class ChessGateBot {
     });
   }
 
+  private dailyPuzzleSession(challenge: DailyPuzzleChallenge, attempt: DailyPuzzleAttempt): PuzzleSession {
+    return {
+      guildId: challenge.guildId,
+      discordUserId: attempt.discordUserId,
+      puzzleId: challenge.puzzleId,
+      currentFen: attempt.currentFen,
+      solutionMoves: challenge.solutionMoves,
+      currentIndex: attempt.currentIndex,
+      puzzleRating: challenge.puzzleRating,
+      themes: challenge.themes,
+      userColor: challenge.userColor,
+      failedOnce: attempt.mistakes > 0,
+      startedAt: attempt.startedAt
+    };
+  }
+
+  private dailyPuzzleComponents(challengeId: string, active = true): ActionRowBuilder<ButtonBuilder>[] {
+    if (!active) return [];
+    return [new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${DAILY_PUZZLE_OPEN_PREFIX}${challengeId}`)
+        .setLabel("ابدأ أو أكمل الحل")
+        .setEmoji("🧩")
+        .setStyle(ButtonStyle.Primary)
+    )];
+  }
+
+  private async dailyPuzzlePublicPayload(challenge: DailyPuzzleChallenge) {
+    const filename = `solichess-daily-${challenge.id}.png`;
+    const board = await renderBoard(challenge.initialFen, challenge.userColor);
+    return {
+      embeds: [new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle("♟️ تحدي SoliChess الجديد")
+        .setDescription([
+          `أنت تلعب بـ **${colorName(challenge.userColor)}** — ابحث عن أفضل سلسلة نقلات.`,
+          "اضغط الزر وأرسل إجابتك بشكل خاص؛ لن يرى أي عضو نقلاتك أو أخطاءك أثناء الجولة.",
+          `تنتهي الجولة <t:${Math.floor(challenge.endsAt / 1000)}:R>، وبعدها تُنشر النتائج للجميع.`
+        ].join("\n\n"))
+        .addFields(
+          { name: "مستوى اللغز", value: String(challenge.puzzleRating), inline: true },
+          { name: "المواضيع", value: themeLabels(challenge.themes) || "تكتيك", inline: true }
+        )
+        .setImage(`attachment://${filename}`)
+        .setFooter({ text: "الإجابات سرية حتى نهاية الجولة • ألغاز Lichess المرخّصة CC0" })],
+      files: [new AttachmentBuilder(board, { name: filename })],
+      components: this.dailyPuzzleComponents(challenge.id)
+    };
+  }
+
+  private async dailyPuzzleAttemptPayload(
+    challenge: DailyPuzzleChallenge,
+    attempt: DailyPuzzleAttempt,
+    note: string
+  ): Promise<InteractionReplyOptions> {
+    const filename = `solichess-attempt-${challenge.id}.png`;
+    const board = await renderBoard(attempt.currentFen, challenge.userColor);
+    const finished = attempt.solvedAt !== null;
+    return {
+      embeds: [new EmbedBuilder()
+        .setColor(finished ? 0x57f287 : 0x5865f2)
+        .setTitle(finished ? "✅ تم تسجيل حلك" : "🔒 محاولتك الخاصة")
+        .setDescription(`${note}\n\n**الأخطاء:** ${attempt.mistakes} • **التقدم:** ${Math.min(attempt.currentIndex, challenge.solutionMoves.length)}/${challenge.solutionMoves.length}`)
+        .setImage(`attachment://${filename}`)
+        .setFooter({ text: finished ? "ستظهر النتيجة للجميع عند انتهاء الجولة" : "هذه الرسالة لا يراها غيرك" })],
+      files: [new AttachmentBuilder(board, { name: filename })],
+      components: finished ? [] : [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`${DAILY_PUZZLE_ANSWER_PREFIX}${challenge.id}`)
+          .setLabel("أدخل النقلة")
+          .setStyle(ButtonStyle.Success)
+      )],
+      flags: MessageFlags.Ephemeral
+    };
+  }
+
+  private newDailyPuzzleAttempt(challenge: DailyPuzzleChallenge, discordUserId: string): DailyPuzzleAttempt {
+    const now = Date.now();
+    return {
+      challengeId: challenge.id,
+      guildId: challenge.guildId,
+      discordUserId,
+      currentFen: challenge.initialFen,
+      currentIndex: 0,
+      mistakes: 0,
+      solvedAt: null,
+      startedAt: now,
+      updatedAt: now
+    };
+  }
+
+  private async handleDailyPuzzleButton(interaction: ButtonInteraction): Promise<void> {
+    const isOpen = interaction.customId.startsWith(DAILY_PUZZLE_OPEN_PREFIX);
+    const prefix = isOpen ? DAILY_PUZZLE_OPEN_PREFIX : DAILY_PUZZLE_ANSWER_PREFIX;
+    const challengeId = interaction.customId.slice(prefix.length);
+    const challenge = this.db.getDailyPuzzle(challengeId, interaction.guildId!);
+    if (!challenge || challenge.status !== "active" || challenge.endsAt <= Date.now()) {
+      return void await replyError(interaction, "انتهت هذه الجولة وانتظر اللغز التالي.");
+    }
+
+    let attempt = this.db.getDailyPuzzleAttempt(challenge.id, interaction.user.id);
+    if (!attempt) {
+      attempt = this.newDailyPuzzleAttempt(challenge, interaction.user.id);
+      this.db.saveDailyPuzzleAttempt(attempt);
+    }
+    if (attempt.solvedAt !== null) {
+      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(challenge, attempt, "حلّك مسجل بالفعل."));
+    }
+
+    if (isOpen) {
+      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(
+        challenge,
+        attempt,
+        attempt.currentIndex === 0 ? "ابدأ الحل عندما تكون جاهزًا." : "هذه وضعيتك الحالية؛ أكمل من حيث توقفت."
+      ));
+    }
+
+    const input = new TextInputBuilder()
+      .setCustomId("daily_puzzle_move")
+      .setLabel("اكتب أفضل نقلة")
+      .setPlaceholder("مثال: Bxe1 أو c3e1")
+      .setMinLength(2)
+      .setMaxLength(12)
+      .setRequired(true)
+      .setStyle(TextInputStyle.Short);
+    await interaction.showModal(
+      new ModalBuilder()
+        .setCustomId(`${DAILY_PUZZLE_MODAL_PREFIX}${challenge.id}`)
+        .setTitle("إجابة التحدي السرية")
+        .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input))
+    );
+  }
+
+  private async handleDailyPuzzleMove(interaction: ModalSubmitInteraction): Promise<void> {
+    const challengeId = interaction.customId.slice(DAILY_PUZZLE_MODAL_PREFIX.length);
+    const challenge = this.db.getDailyPuzzle(challengeId, interaction.guildId!);
+    if (!challenge || challenge.status !== "active" || challenge.endsAt <= Date.now()) {
+      return void await replyError(interaction, "انتهت هذه الجولة وانتظر اللغز التالي.");
+    }
+    let attempt = this.db.getDailyPuzzleAttempt(challenge.id, interaction.user.id)
+      ?? this.newDailyPuzzleAttempt(challenge, interaction.user.id);
+    if (attempt.solvedAt !== null) {
+      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(challenge, attempt, "حلّك مسجل بالفعل."));
+    }
+
+    const input = interaction.fields.getTextInputValue("daily_puzzle_move");
+    let result;
+    try {
+      result = submitPuzzleMove(this.dailyPuzzleSession(challenge, attempt), input);
+    } catch {
+      attempt = { ...attempt, mistakes: attempt.mistakes + 1, updatedAt: Date.now() };
+      this.db.saveDailyPuzzleAttempt(attempt);
+      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(
+        challenge,
+        attempt,
+        "❌ النقلة غير قانونية أو صيغتها غير صحيحة، واحتُسبت محاولة خاطئة."
+      ));
+    }
+
+    if (result.kind === "wrong") {
+      attempt = { ...attempt, mistakes: attempt.mistakes + 1, updatedAt: Date.now() };
+      this.db.saveDailyPuzzleAttempt(attempt);
+      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(
+        challenge,
+        attempt,
+        `❌ **${result.playedSan}** ليست أفضل نقلة. حاول مرة أخرى.`
+      ));
+    }
+
+    const solvedAt = result.kind === "solved" ? Date.now() : null;
+    attempt = {
+      ...attempt,
+      currentFen: result.session.currentFen,
+      currentIndex: result.kind === "solved" ? challenge.solutionMoves.length : result.session.currentIndex,
+      solvedAt,
+      updatedAt: Date.now()
+    };
+    this.db.saveDailyPuzzleAttempt(attempt);
+
+    const note = result.kind === "solved"
+      ? (attempt.mistakes === 0
+        ? `🏆 حل مثالي بدون أخطاء! آخر نقلة: **${result.playedSan}**.`
+        : `✅ اكتمل الحل بعد **${attempt.mistakes}** ${attempt.mistakes === 1 ? "خطأ" : "أخطاء"}.`)
+      : `✅ **${result.playedSan}** صحيحة. رد الخصم: **${result.opponentSan}** — أكمل الحل.`;
+    await interaction.reply(await this.dailyPuzzleAttemptPayload(challenge, attempt, note));
+  }
+
+  private formatDailyResultEntries(attempts: DailyPuzzleAttempt[], includeMistakes: boolean): string {
+    if (attempts.length === 0) return "—";
+    const shown = attempts.slice(0, 20).map((attempt, index) =>
+      includeMistakes
+        ? `${index + 1}. <@${attempt.discordUserId}> — **${attempt.mistakes}** ${attempt.mistakes === 1 ? "خطأ" : "أخطاء"}`
+        : `${index + 1}. <@${attempt.discordUserId}>`
+    );
+    if (attempts.length > shown.length) shown.push(`… و${attempts.length - shown.length} لاعبين آخرين`);
+    return shown.join("\n");
+  }
+
+  private async finalizeDailyPuzzle(challenge: DailyPuzzleChallenge): Promise<void> {
+    if (!await this.db.completeDailyPuzzle(challenge.id, challenge.guildId)) return;
+    const attempts = this.db.listDailyPuzzleAttempts(challenge.id);
+    const perfect = attempts.filter((attempt) => attempt.solvedAt !== null && attempt.mistakes === 0)
+      .sort((a, b) => a.solvedAt! - b.solvedAt!);
+    const solvedWithMistakes = attempts.filter((attempt) => attempt.solvedAt !== null && attempt.mistakes > 0)
+      .sort((a, b) => a.mistakes - b.mistakes || a.solvedAt! - b.solvedAt!);
+    const incomplete = attempts.filter((attempt) => attempt.solvedAt === null)
+      .sort((a, b) => a.mistakes - b.mistakes);
+    const solution = solutionInSan(this.dailyPuzzleSession(
+      challenge,
+      this.newDailyPuzzleAttempt(challenge, "solution")
+    )).join(" ");
+
+    const guild = await this.client.guilds.fetch(challenge.guildId);
+    const channel = await guild.channels.fetch(challenge.channelId).catch(() => null);
+    if (!channel?.isTextBased() || channel.isDMBased()) return;
+    if (challenge.messageId) {
+      const message = await channel.messages.fetch(challenge.messageId).catch(() => null);
+      if (message) await message.edit({ components: [] }).catch(() => undefined);
+    }
+    await channel.send({
+      embeds: [new EmbedBuilder()
+        .setColor(0xfee75c)
+        .setTitle("🏁 نتائج تحدي SoliChess")
+        .setDescription(`انتهت الجولة بمشاركة **${attempts.length}** لاعب.\n\n**الحل:** \`${solution}\``)
+        .addFields(
+          { name: `🏆 حل مثالي بدون أخطاء (${perfect.length})`, value: this.formatDailyResultEntries(perfect, false), inline: false },
+          { name: `✅ أكملوا الحل مع أخطاء (${solvedWithMistakes.length})`, value: this.formatDailyResultEntries(solvedWithMistakes, true), inline: false },
+          { name: `⏳ حاولوا ولم يكملوا (${incomplete.length})`, value: this.formatDailyResultEntries(incomplete, true), inline: false }
+        )
+        .setFooter({ text: `مستوى اللغز ${challenge.puzzleRating} • الجولة التالية حسب الجدول المحدد` })]
+    });
+    this.db.audit(challenge.guildId, null, "daily_puzzle_completed", {
+      challengeId: challenge.id,
+      participants: attempts.length,
+      perfect: perfect.length,
+      solvedWithMistakes: solvedWithMistakes.length
+    });
+  }
+
+  private async postDailyPuzzle(settings: DailyPuzzleSettings): Promise<void> {
+    const guild = await this.client.guilds.fetch(settings.guildId);
+    const channel = await guild.channels.fetch(settings.channelId).catch(() => null);
+    if (!channel?.isTextBased() || channel.isDMBased()) throw new Error("Daily puzzle channel is unavailable");
+    const puzzle = await this.puzzles.getNextPuzzle();
+    const startedAt = Date.now();
+    const challenge: DailyPuzzleChallenge = {
+      id: randomBytes(6).toString("hex"),
+      guildId: settings.guildId,
+      channelId: settings.channelId,
+      messageId: null,
+      puzzleId: puzzle.id,
+      initialFen: puzzle.fen,
+      solutionMoves: puzzle.solution,
+      puzzleRating: puzzle.rating,
+      themes: puzzle.themes,
+      userColor: puzzle.fen.split(" ")[1] === "b" ? "b" : "w",
+      startedAt,
+      endsAt: startedAt + settings.intervalHours * 60 * 60 * 1000,
+      status: "active"
+    };
+    if (!await this.db.createDailyPuzzle(challenge)) return;
+    try {
+      const message = await channel.send(await this.dailyPuzzlePublicPayload(challenge));
+      challenge.messageId = message.id;
+      this.db.saveDailyPuzzle(challenge);
+      this.db.upsertDailyPuzzleSettings({ ...settings, nextPuzzleAt: challenge.endsAt });
+      this.db.audit(settings.guildId, null, "daily_puzzle_started", {
+        challengeId: challenge.id,
+        channelId: settings.channelId,
+        intervalHours: settings.intervalHours
+      });
+    } catch (error) {
+      await this.db.completeDailyPuzzle(challenge.id, challenge.guildId);
+      this.db.upsertDailyPuzzleSettings({ ...settings, nextPuzzleAt: Date.now() + 5 * 60_000 });
+      throw error;
+    }
+  }
+
+  private async monitorDailyPuzzles(): Promise<void> {
+    if (this.dailyPuzzleMonitorRunning) return;
+    this.dailyPuzzleMonitorRunning = true;
+    try {
+      for (const listedSettings of this.db.listDailyPuzzleSettings()) {
+        let active = this.db.getActiveDailyPuzzle(listedSettings.guildId);
+        if (active && active.endsAt <= Date.now()) {
+          await this.finalizeDailyPuzzle(active);
+          active = null;
+        }
+        const settings = this.db.getDailyPuzzleSettings(listedSettings.guildId) ?? listedSettings;
+        if (!active && settings.nextPuzzleAt <= Date.now()) {
+          try {
+            await this.postDailyPuzzle(settings);
+          } catch (error) {
+            console.error(`Daily puzzle post failed for ${settings.guildId}`, error);
+          }
+        }
+      }
+      await this.db.flush();
+    } finally {
+      this.dailyPuzzleMonitorRunning = false;
+    }
+  }
+
+  private async handleSetupDailyPuzzle(interaction: ChatInputCommandInteraction): Promise<void> {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+      return void await replyError(interaction, "تحتاج صلاحية Manage Server.");
+    }
+    if (!this.db.getGuildSettings(interaction.guildId!)) {
+      return void await replyError(interaction, "شغّل /setup أولًا لإعداد نظام البوت الأساسي.");
+    }
+    const channel = interaction.options.getChannel("channel", true);
+    const intervalValue = interaction.options.getInteger("interval", true);
+    const intervalHours: 6 | 12 = intervalValue === 6 ? 6 : 12;
+    if (channel.type !== ChannelType.GuildText) return void await replyError(interaction, "اختر رومًا كتابيًا عاديًا.");
+    const active = this.db.getActiveDailyPuzzle(interaction.guildId!);
+    const settings: DailyPuzzleSettings = {
+      guildId: interaction.guildId!,
+      channelId: channel.id,
+      intervalHours,
+      nextPuzzleAt: active?.endsAt ?? Date.now()
+    };
+    this.db.upsertDailyPuzzleSettings(settings);
+    this.db.audit(interaction.guildId!, interaction.user.id, "daily_puzzle_configured", {
+      channelId: channel.id,
+      intervalHours
+    });
+    await interaction.reply({
+      content: active
+        ? `✅ تم تحديث التحدي إلى <#${channel.id}> كل **${intervalHours} ساعات**. يبدأ الإعداد الجديد بعد انتهاء الجولة الحالية.`
+        : `✅ تم تفعيل تحدي الألغاز في <#${channel.id}> كل **${intervalHours} ساعات**. سيُنشر أول لغز الآن.`,
+      flags: MessageFlags.Ephemeral
+    });
+    void this.monitorDailyPuzzles();
+  }
+
   private analysisLabel(classification: MoveClassification): string {
     const labels: Record<MoveClassification, string> = {
       brilliant: "💎 عبقرية",
@@ -636,30 +996,46 @@ export class ChessGateBot {
     };
     const movePrefix = move.color === "w" ? `${move.moveNumber}.` : `${move.moveNumber}...`;
     const lossText = move.centipawnLoss >= 10_000 ? "حاسمة" : `${(move.centipawnLoss / 100).toFixed(2)} بيدق`;
-    const summary = `💎 ${result.counts.brilliant} • ⭐ ${result.counts.best} • ✅ ${result.counts.excellent} • 👍 ${result.counts.good} • ?! ${result.counts.inaccuracy} • ? ${result.counts.mistake} • ?? ${result.counts.blunder}`;
+    const summary = [
+      `💎 عبقرية: **${result.counts.brilliant}**　⭐ الأفضل: **${result.counts.best}**`,
+      `✅ ممتازة: **${result.counts.excellent}**　👍 جيدة: **${result.counts.good}**`,
+      `⚠️ غير دقيقة: **${result.counts.inaccuracy}**　❌ خطأ: **${result.counts.mistake}**　🚨 فادحة: **${result.counts.blunder}**`
+    ].join("\n");
+    const principalVariation = move.principalVariation
+      ? `\`${move.principalVariation}\``
+      : "لا يوجد مسار إضافي";
     const embed = new EmbedBuilder()
       .setColor(this.analysisColor(move.classification))
-      .setTitle(`مراجعة ${result.username} ضد ${result.opponent}`)
+      .setAuthor({ name: "SoliChess • مراجعة ما بعد المباراة" })
+      .setTitle(`♟️ ${result.username} ضد ${result.opponent}`)
       .setURL(result.gameUrl)
       .setDescription(
-        `النتيجة: **${resultNames[result.result] ?? result.result}** • ${result.timeClass} • لعبت بـ**${colorName(result.color)}**\n` +
-        `الدقة التقديرية: **${result.approximateAccuracy}%**\n\n${summary}`
+        `**${resultNames[result.result] ?? result.result}**　•　**${result.timeClass}**　•　${colorName(result.color)}\n` +
+        `الدقة التقديرية: **${result.approximateAccuracy}%**　•　عدد نقلاتك: **${result.moveCount}**`
       )
       .addFields(
-        { name: `النقلة ${move.ply}/${result.moves.length}`, value: `\`${movePrefix} ${move.playedSan}\``, inline: true },
-        { name: "تصنيف النقلة", value: `**${this.analysisLabel(move.classification)}**`, inline: true },
-        { name: "تقييم الوضع", value: this.evaluationText(move.whiteEvaluation), inline: true },
-        { name: "أفضل نقلة", value: `\`${move.bestSan}\``, inline: true },
-        { name: "خسارة النقلة", value: lossText, inline: true },
-        { name: "متوسط خسارتك", value: `${(result.averageCentipawnLoss / 100).toFixed(2)} بيدق`, inline: true },
         {
-          name: "المسار المقترح",
-          value: move.principalVariation ? `\`\`\`\n${move.principalVariation}\n\`\`\`` : "—",
+          name: `📍 النقلة المعروضة • ${move.ply} من ${result.moves.length}`,
+          value: [
+            `لُعبت: **\`${movePrefix} ${move.playedSan}\`**　•　${this.analysisLabel(move.classification)}`,
+            `تقييم الوضع: **${this.evaluationText(move.whiteEvaluation)}**`,
+            `خسارة النقلة: **${lossText}**`
+          ].join("\n"),
+          inline: false
+        },
+        {
+          name: "🎯 التحسين المقترح",
+          value: `الأفضل: **\`${move.bestSan}\`**\nالمسار: ${principalVariation}`,
+          inline: false
+        },
+        {
+          name: "📊 ملخص نقلاتك",
+          value: `${summary}\n\nمتوسط الخسارة: **${(result.averageCentipawnLoss / 100).toFixed(2)} بيدق**`,
           inline: false
         }
       )
       .setImage(`attachment://${filename}`)
-      .setFooter({ text: `السهم الأخضر = أفضل نقلة • عمق التحليل ${result.engineDepth} • التصنيفات تقديرية من SoliChess` });
+      .setFooter({ text: `تنقّل بين النقلات بالأزرار • السهم الأخضر هو البديل الأفضل • عمق المراجعة ${result.engineDepth}` });
     return {
       content: session.content,
       embeds: [embed],

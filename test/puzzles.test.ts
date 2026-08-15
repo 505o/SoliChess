@@ -33,6 +33,21 @@ test("wrong legal puzzle moves mark the session as failed", () => {
   assert.equal(result.session.currentFen, session.currentFen);
 });
 
+test("lowercase piece notation is accepted when the intended SAN move is clear", () => {
+  const lowercasePuzzle: LichessPuzzle = {
+    id: "m534y",
+    rating: 1200,
+    plays: 1,
+    fen: "1r2r1k1/p3qppp/2p5/2B5/8/1PbP1P2/P1P1RQPP/4R2K b - - 0 24",
+    lastMove: "",
+    solution: ["c3e1", "e2e7", "e1f2"],
+    themes: ["short"]
+  };
+  const result = submitPuzzleMove(sessionFromPuzzle("guild", "user", lowercasePuzzle), "bxe1");
+  assert.equal(result.kind, "continue");
+  assert.equal(result.playedSan, "Bxe1");
+});
+
 test("puzzle rating moves in the expected direction", () => {
   assert.ok(updatedPuzzleRating(1200, 1500, true) > 1200);
   assert.ok(updatedPuzzleRating(1200, 1500, false) < 1200);

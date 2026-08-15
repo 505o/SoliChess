@@ -12,7 +12,7 @@ SoliChess may process and store:
 - Chess.com usernames and stable player IDs.
 - Public Chess.com profile information, including ratings, title, account status, and public profile URL.
 - Verification status, verification method, timestamps, and rating-role assignments.
-- Puzzle progress, puzzle rating, solved and failed counts, and streak statistics.
+- Puzzle progress, puzzle rating, solved and failed counts, streak statistics, and per-round mistake counts for shared puzzle challenges.
 - Public completed-game data requested for post-game analysis, including the game URL and engine-derived review results.
 - Administrative audit records, such as account linking, account-status changes, restoration, or unlinking actions.
 - OAuth authorization data if Chess.com OAuth is enabled. OAuth tokens will only be used to authenticate the connected account and access approved Chess.com data.
@@ -27,7 +27,7 @@ We use this information to:
 - Prevent impersonation and duplicate account linking.
 - Display public chess ratings and assign the appropriate Discord roles.
 - Calculate leaderboards within a Discord server.
-- Provide tactical puzzles, puzzle ratings, streaks, and puzzle leaderboards.
+- Provide tactical puzzles, private challenge attempts, end-of-round results, puzzle ratings, streaks, and puzzle leaderboards.
 - Analyze a connected member's completed public games for post-game learning.
 - Monitor public account-status changes and place closed accounts into administrative review.
 - Maintain security, investigate abuse, troubleshoot problems, and enforce server rules.
@@ -40,7 +40,7 @@ We do not sell personal information or use it for advertising. Information is on
 
 ## Data Retention
 
-Account-linking data is retained while needed to provide the service and enforce the one-account-per-member rule. Minimal identifiers may be retained after an administrative unlink to prevent abuse, resolve disputes, and maintain server security, unless deletion is required by applicable law. Temporary verification challenges expire automatically. Interactive game-review sessions expire after seven days. Administrative audit records are normally retained for up to 90 days and capped to limit database storage.
+Account-linking data is retained while needed to provide the service and enforce the one-account-per-member rule. Minimal identifiers may be retained after an administrative unlink to prevent abuse, resolve disputes, and maintain server security, unless deletion is required by applicable law. Temporary verification challenges expire automatically. Interactive game-review sessions expire after seven days. Completed shared-puzzle rounds and their attempt counters expire after 30 days. Administrative audit records are normally retained for up to 90 days and capped to limit database storage.
 
 ## Data Requests and Account Disconnection
 

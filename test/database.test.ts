@@ -110,3 +110,48 @@ test("database persists interactive review sessions across restarts", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("database stores one active daily puzzle and private attempts", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "chess-gate-daily-test-"));
+  const database = new AppDatabase(path.join(directory, "test.db"));
+  const challenge = {
+    id: "daily0000001",
+    guildId: "guild-1",
+    channelId: "channel-1",
+    messageId: null,
+    puzzleId: "puzzle-1",
+    initialFen: "8/8/8/8/8/8/4K3/7k w - - 0 1",
+    solutionMoves: ["e2e3"],
+    puzzleRating: 1400,
+    themes: ["endgame"],
+    userColor: "w" as const,
+    startedAt: 1,
+    endsAt: 100,
+    status: "active" as const
+  };
+  try {
+    database.upsertDailyPuzzleSettings({ guildId: "guild-1", channelId: "channel-1", intervalHours: 6, nextPuzzleAt: 1 });
+    assert.equal(database.getDailyPuzzleSettings("guild-1")?.intervalHours, 6);
+    assert.equal(await database.createDailyPuzzle(challenge), true);
+    assert.equal(await database.createDailyPuzzle({ ...challenge, id: "daily0000002" }), false);
+
+    database.saveDailyPuzzleAttempt({
+      challengeId: challenge.id,
+      guildId: challenge.guildId,
+      discordUserId: "user-1",
+      currentFen: challenge.initialFen,
+      currentIndex: 0,
+      mistakes: 2,
+      solvedAt: null,
+      startedAt: 2,
+      updatedAt: 3
+    });
+    assert.equal(database.getDailyPuzzleAttempt(challenge.id, "user-1")?.mistakes, 2);
+    assert.equal(database.listDailyPuzzleAttempts(challenge.id).length, 1);
+    assert.equal(await database.completeDailyPuzzle(challenge.id, challenge.guildId), true);
+    assert.equal(database.getActiveDailyPuzzle(challenge.guildId), null);
+  } finally {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

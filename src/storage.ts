@@ -1,5 +1,14 @@
 import type { AuditLogRecord, PersistedReviewSession } from "./database.js";
-import type { GuildSettings, LinkRecord, PendingVerification, PuzzleSession, PuzzleStats } from "./types.js";
+import type {
+  DailyPuzzleAttempt,
+  DailyPuzzleChallenge,
+  DailyPuzzleSettings,
+  GuildSettings,
+  LinkRecord,
+  PendingVerification,
+  PuzzleSession,
+  PuzzleStats
+} from "./types.js";
 
 export interface BotDatabase {
   upsertGuildSettings(settings: GuildSettings): void;
@@ -32,6 +41,17 @@ export interface BotDatabase {
   listReviewSessions(): PersistedReviewSession[];
   updateReviewSessionIndex(id: string, guildId: string, currentIndex: number): void;
   deleteExpiredReviewSessions(now?: number): number;
+  upsertDailyPuzzleSettings(settings: DailyPuzzleSettings): void;
+  getDailyPuzzleSettings(guildId: string): DailyPuzzleSettings | null;
+  listDailyPuzzleSettings(): DailyPuzzleSettings[];
+  createDailyPuzzle(challenge: DailyPuzzleChallenge): Promise<boolean>;
+  saveDailyPuzzle(challenge: DailyPuzzleChallenge): void;
+  getDailyPuzzle(id: string, guildId: string): DailyPuzzleChallenge | null;
+  getActiveDailyPuzzle(guildId: string): DailyPuzzleChallenge | null;
+  completeDailyPuzzle(id: string, guildId: string): Promise<boolean>;
+  getDailyPuzzleAttempt(challengeId: string, discordUserId: string): DailyPuzzleAttempt | null;
+  saveDailyPuzzleAttempt(attempt: DailyPuzzleAttempt): void;
+  listDailyPuzzleAttempts(challengeId: string): DailyPuzzleAttempt[];
   flush(): Promise<void>;
   close(): void | Promise<void>;
 }

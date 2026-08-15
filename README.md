@@ -18,13 +18,15 @@ SoliChess also monitors public account-status changes, maintains an administrati
 
 Members can solve interactive tactical puzzles directly in Discord using rendered chessboards, move validation, hints, puzzle ratings, streaks, and server rankings. Puzzle positions come from the Lichess open puzzle database under CC0.
 
+Administrators can also configure a shared puzzle challenge with `/setup-daily-puzzle` and choose a six-hour or twelve-hour round. Every member's moves, progress, and mistakes remain private during the round. When time expires, SoliChess publishes the perfect solvers, completed solutions with mistake counts, incomplete attempts, and the official solution.
+
 The bot monitors connected accounts for newly completed Chess.com games and posts one automatic review in a dedicated Discord channel. Members can also request the latest review manually. Reviews open on the final board position with interactive move navigation, an evaluation bar, the best move and principal variation, and SoliChess move classifications such as brilliant, best, inaccuracy, mistake, and blunder.
 
 Administrators configure or replace the automatic review channel independently with `/setup-reviews`; manual `/analyze` requests do not suppress the automatic channel post.
 
 ## Data storage
 
-SoliChess uses a private Neon Postgres database as its operational data store. It keeps only the identifiers and compact state required for verification, ratings, puzzles, moderation, and interactive reviews. Review payloads are compressed, expire after seven days, and are capped at 500 active sessions; administrative audit records expire after 90 days and are capped to control storage use. Images, Chess.com passwords, Discord passwords, and full game archives are not stored.
+SoliChess uses a private Neon Postgres database as its operational data store. It keeps only the identifiers and compact state required for verification, ratings, puzzles, moderation, and interactive reviews. Review payloads are compressed, expire after seven days, and are capped at 500 active sessions. Completed shared-puzzle rounds and their attempt counters expire after 30 days. Administrative audit records expire after 90 days and are capped to control storage use. Images, Chess.com passwords, Discord passwords, and full game archives are not stored.
 
 The previous local SQLite database is used only as a retained migration backup and is not used while the bot is running.
 

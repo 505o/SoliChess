@@ -119,3 +119,38 @@ export interface PuzzleStats {
   bestStreak: number;
   updatedAt: number;
 }
+
+export interface DailyPuzzleSettings {
+  guildId: string;
+  channelId: string;
+  intervalHours: 6 | 12;
+  nextPuzzleAt: number;
+}
+
+export interface DailyPuzzleChallenge {
+  id: string;
+  guildId: string;
+  channelId: string;
+  messageId: string | null;
+  puzzleId: string;
+  initialFen: string;
+  solutionMoves: string[];
+  puzzleRating: number;
+  themes: string[];
+  userColor: "w" | "b";
+  startedAt: number;
+  endsAt: number;
+  status: "active" | "completed";
+}
+
+export interface DailyPuzzleAttempt {
+  challengeId: string;
+  guildId: string;
+  discordUserId: string;
+  currentFen: string;
+  currentIndex: number;
+  mistakes: number;
+  solvedAt: number | null;
+  startedAt: number;
+  updatedAt: number;
+}

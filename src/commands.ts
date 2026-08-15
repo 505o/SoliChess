@@ -56,6 +56,27 @@ export const commandBuilders = [
         .addChannelTypes(ChannelType.GuildText)
     ),
   new SlashCommandBuilder()
+    .setName("setup-daily-puzzle")
+    .setDescription("إعداد روم وتوقيت تحدي الألغاز الدوري")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addChannelOption((option) =>
+      option
+        .setName("channel")
+        .setDescription("الروم الذي تُنشر فيه الألغاز والنتائج")
+        .setRequired(true)
+        .addChannelTypes(ChannelType.GuildText)
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("interval")
+        .setDescription("مدة كل جولة بالساعات")
+        .setRequired(true)
+        .addChoices(
+          { name: "كل 6 ساعات", value: 6 },
+          { name: "كل 12 ساعة", value: 12 }
+        )
+    ),
+  new SlashCommandBuilder()
     .setName("refresh")
     .setDescription("تحديث بيانات Chess.com لعضو")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)

@@ -1,7 +1,16 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { GuildSettings, LinkRecord, PendingVerification, PuzzleSession, PuzzleStats } from "./types.js";
+import type {
+  DailyPuzzleAttempt,
+  DailyPuzzleChallenge,
+  DailyPuzzleSettings,
+  GuildSettings,
+  LinkRecord,
+  PendingVerification,
+  PuzzleSession,
+  PuzzleStats
+} from "./types.js";
 import type { BotDatabase } from "./storage.js";
 
 interface GuildSettingsRow {
@@ -99,6 +108,41 @@ export interface PersistedReviewSession {
   expiresAt: number;
 }
 
+interface DailyPuzzleSettingsRow {
+  guild_id: string;
+  channel_id: string;
+  interval_hours: number;
+  next_puzzle_at: number;
+}
+
+interface DailyPuzzleRow {
+  id: string;
+  guild_id: string;
+  channel_id: string;
+  message_id: string | null;
+  puzzle_id: string;
+  initial_fen: string;
+  solution_moves_json: string;
+  puzzle_rating: number;
+  themes_json: string;
+  user_color: "w" | "b";
+  started_at: number;
+  ends_at: number;
+  status: "active" | "completed";
+}
+
+interface DailyPuzzleAttemptRow {
+  challenge_id: string;
+  guild_id: string;
+  discord_user_id: string;
+  current_fen: string;
+  current_index: number;
+  mistakes: number;
+  solved_at: number | null;
+  started_at: number;
+  updated_at: number;
+}
+
 function mapGuild(row: GuildSettingsRow): GuildSettings {
   return {
     guildId: row.guild_id,
@@ -164,6 +208,47 @@ function mapPuzzleStats(row: PuzzleStatsRow): PuzzleStats {
     failed: row.failed,
     streak: row.streak,
     bestStreak: row.best_streak,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapDailyPuzzleSettings(row: DailyPuzzleSettingsRow): DailyPuzzleSettings {
+  return {
+    guildId: row.guild_id,
+    channelId: row.channel_id,
+    intervalHours: row.interval_hours === 6 ? 6 : 12,
+    nextPuzzleAt: row.next_puzzle_at
+  };
+}
+
+function mapDailyPuzzle(row: DailyPuzzleRow): DailyPuzzleChallenge {
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    channelId: row.channel_id,
+    messageId: row.message_id,
+    puzzleId: row.puzzle_id,
+    initialFen: row.initial_fen,
+    solutionMoves: JSON.parse(row.solution_moves_json) as string[],
+    puzzleRating: row.puzzle_rating,
+    themes: JSON.parse(row.themes_json) as string[],
+    userColor: row.user_color,
+    startedAt: row.started_at,
+    endsAt: row.ends_at,
+    status: row.status
+  };
+}
+
+function mapDailyPuzzleAttempt(row: DailyPuzzleAttemptRow): DailyPuzzleAttempt {
+  return {
+    challengeId: row.challenge_id,
+    guildId: row.guild_id,
+    discordUserId: row.discord_user_id,
+    currentFen: row.current_fen,
+    currentIndex: row.current_index,
+    mistakes: row.mistakes,
+    solvedAt: row.solved_at,
+    startedAt: row.started_at,
     updatedAt: row.updated_at
   };
 }
@@ -264,9 +349,49 @@ export class AppDatabase implements BotDatabase {
         expires_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS daily_puzzle_settings (
+        guild_id TEXT PRIMARY KEY,
+        channel_id TEXT NOT NULL,
+        interval_hours INTEGER NOT NULL CHECK(interval_hours IN (6, 12)),
+        next_puzzle_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS daily_puzzles (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        message_id TEXT,
+        puzzle_id TEXT NOT NULL,
+        initial_fen TEXT NOT NULL,
+        solution_moves_json TEXT NOT NULL,
+        puzzle_rating INTEGER NOT NULL,
+        themes_json TEXT NOT NULL,
+        user_color TEXT NOT NULL CHECK(user_color IN ('w', 'b')),
+        started_at INTEGER NOT NULL,
+        ends_at INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('active', 'completed'))
+      );
+
+      CREATE TABLE IF NOT EXISTS daily_puzzle_attempts (
+        challenge_id TEXT NOT NULL,
+        guild_id TEXT NOT NULL,
+        discord_user_id TEXT NOT NULL,
+        current_fen TEXT NOT NULL,
+        current_index INTEGER NOT NULL,
+        mistakes INTEGER NOT NULL DEFAULT 0,
+        solved_at INTEGER,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (challenge_id, discord_user_id),
+        FOREIGN KEY (challenge_id) REFERENCES daily_puzzles(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_links_guild ON links(guild_id);
       CREATE INDEX IF NOT EXISTS idx_pending_expiry ON pending_verifications(expires_at);
       CREATE INDEX IF NOT EXISTS idx_review_session_expiry ON review_sessions(expires_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_puzzle_active ON daily_puzzles(guild_id) WHERE status = 'active';
+      CREATE INDEX IF NOT EXISTS idx_daily_puzzle_ends ON daily_puzzles(ends_at);
+      CREATE INDEX IF NOT EXISTS idx_daily_attempt_challenge ON daily_puzzle_attempts(challenge_id);
     `);
     this.ensureColumn("guild_settings", "analysis_channel_id", "TEXT");
     this.ensureColumn("links", "last_analyzed_game_url", "TEXT");
@@ -624,6 +749,117 @@ export class AppDatabase implements BotDatabase {
 
   deleteExpiredReviewSessions(now = Date.now()): number {
     return Number(this.db.prepare("DELETE FROM review_sessions WHERE expires_at < ?").run(now).changes);
+  }
+
+  upsertDailyPuzzleSettings(settings: DailyPuzzleSettings): void {
+    this.db.prepare(`
+      INSERT INTO daily_puzzle_settings (guild_id, channel_id, interval_hours, next_puzzle_at)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(guild_id) DO UPDATE SET
+        channel_id = excluded.channel_id,
+        interval_hours = excluded.interval_hours,
+        next_puzzle_at = excluded.next_puzzle_at
+    `).run(settings.guildId, settings.channelId, settings.intervalHours, settings.nextPuzzleAt);
+  }
+
+  getDailyPuzzleSettings(guildId: string): DailyPuzzleSettings | null {
+    const row = this.db.prepare("SELECT * FROM daily_puzzle_settings WHERE guild_id = ?")
+      .get(guildId) as DailyPuzzleSettingsRow | undefined;
+    return row ? mapDailyPuzzleSettings(row) : null;
+  }
+
+  listDailyPuzzleSettings(): DailyPuzzleSettings[] {
+    const rows = this.db.prepare("SELECT * FROM daily_puzzle_settings ORDER BY guild_id")
+      .all() as unknown as DailyPuzzleSettingsRow[];
+    return rows.map(mapDailyPuzzleSettings);
+  }
+
+  async createDailyPuzzle(challenge: DailyPuzzleChallenge): Promise<boolean> {
+    try {
+      this.db.prepare(`
+        INSERT INTO daily_puzzles (
+          id, guild_id, channel_id, message_id, puzzle_id, initial_fen, solution_moves_json,
+          puzzle_rating, themes_json, user_color, started_at, ends_at, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        challenge.id, challenge.guildId, challenge.channelId, challenge.messageId, challenge.puzzleId,
+        challenge.initialFen, JSON.stringify(challenge.solutionMoves), challenge.puzzleRating,
+        JSON.stringify(challenge.themes), challenge.userColor, challenge.startedAt, challenge.endsAt, challenge.status
+      );
+      return true;
+    } catch (error) {
+      if (String(error).includes("UNIQUE constraint failed")) return false;
+      throw error;
+    }
+  }
+
+  saveDailyPuzzle(challenge: DailyPuzzleChallenge): void {
+    this.db.prepare(`
+      INSERT INTO daily_puzzles (
+        id, guild_id, channel_id, message_id, puzzle_id, initial_fen, solution_moves_json,
+        puzzle_rating, themes_json, user_color, started_at, ends_at, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        channel_id = excluded.channel_id,
+        message_id = excluded.message_id,
+        ends_at = excluded.ends_at,
+        status = excluded.status
+    `).run(
+      challenge.id, challenge.guildId, challenge.channelId, challenge.messageId, challenge.puzzleId,
+      challenge.initialFen, JSON.stringify(challenge.solutionMoves), challenge.puzzleRating,
+      JSON.stringify(challenge.themes), challenge.userColor, challenge.startedAt, challenge.endsAt, challenge.status
+    );
+  }
+
+  getDailyPuzzle(id: string, guildId: string): DailyPuzzleChallenge | null {
+    const row = this.db.prepare("SELECT * FROM daily_puzzles WHERE id = ? AND guild_id = ?")
+      .get(id, guildId) as DailyPuzzleRow | undefined;
+    return row ? mapDailyPuzzle(row) : null;
+  }
+
+  getActiveDailyPuzzle(guildId: string): DailyPuzzleChallenge | null {
+    const row = this.db.prepare("SELECT * FROM daily_puzzles WHERE guild_id = ? AND status = 'active' LIMIT 1")
+      .get(guildId) as DailyPuzzleRow | undefined;
+    return row ? mapDailyPuzzle(row) : null;
+  }
+
+  async completeDailyPuzzle(id: string, guildId: string): Promise<boolean> {
+    const result = this.db.prepare(
+      "UPDATE daily_puzzles SET status = 'completed' WHERE id = ? AND guild_id = ? AND status = 'active'"
+    ).run(id, guildId);
+    return Number(result.changes) > 0;
+  }
+
+  getDailyPuzzleAttempt(challengeId: string, discordUserId: string): DailyPuzzleAttempt | null {
+    const row = this.db.prepare(
+      "SELECT * FROM daily_puzzle_attempts WHERE challenge_id = ? AND discord_user_id = ?"
+    ).get(challengeId, discordUserId) as DailyPuzzleAttemptRow | undefined;
+    return row ? mapDailyPuzzleAttempt(row) : null;
+  }
+
+  saveDailyPuzzleAttempt(attempt: DailyPuzzleAttempt): void {
+    this.db.prepare(`
+      INSERT INTO daily_puzzle_attempts (
+        challenge_id, guild_id, discord_user_id, current_fen, current_index,
+        mistakes, solved_at, started_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(challenge_id, discord_user_id) DO UPDATE SET
+        current_fen = excluded.current_fen,
+        current_index = excluded.current_index,
+        mistakes = excluded.mistakes,
+        solved_at = excluded.solved_at,
+        updated_at = excluded.updated_at
+    `).run(
+      attempt.challengeId, attempt.guildId, attempt.discordUserId, attempt.currentFen,
+      attempt.currentIndex, attempt.mistakes, attempt.solvedAt, attempt.startedAt, attempt.updatedAt
+    );
+  }
+
+  listDailyPuzzleAttempts(challengeId: string): DailyPuzzleAttempt[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM daily_puzzle_attempts WHERE challenge_id = ? ORDER BY solved_at, mistakes, started_at"
+    ).all(challengeId) as unknown as DailyPuzzleAttemptRow[];
+    return rows.map(mapDailyPuzzleAttempt);
   }
 
   async flush(): Promise<void> {

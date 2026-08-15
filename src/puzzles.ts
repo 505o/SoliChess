@@ -47,9 +47,18 @@ function playUserMove(chess: Chess, input: string): Move {
   if (/^[a-h][1-8][a-h][1-8][qrbn]?$/i.test(value)) {
     return playUci(chess, value.toLowerCase());
   }
-  const move = chess.move(value, { strict: false });
-  if (!move) throw new Error("Illegal move");
-  return move;
+  try {
+    const move = chess.move(value, { strict: false });
+    if (move) return move;
+  } catch {
+    // Retry below with a normalized lowercase piece letter.
+  }
+  if (/^[kqrbn]/.test(value)) {
+    const normalized = `${value[0]!.toUpperCase()}${value.slice(1)}`;
+    const move = chess.move(normalized, { strict: false });
+    if (move) return move;
+  }
+  throw new Error("Illegal move");
 }
 
 export function submitPuzzleMove(session: PuzzleSession, input: string): PuzzleMoveResult {
