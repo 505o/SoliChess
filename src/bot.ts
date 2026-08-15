@@ -14,7 +14,6 @@ import {
   Guild,
   GuildMember,
   Interaction,
-  type InteractionReplyOptions,
   MessageFlags,
   ModalBuilder,
   ModalSubmitInteraction,
@@ -97,8 +96,15 @@ function parseStoredRatings(link: LinkRecord): RatingSnapshot {
 async function replyError(interaction: Interaction, message: string): Promise<void> {
   if (!interaction.isRepliable()) return;
   const payload = { content: `❌ ${message}`, flags: MessageFlags.Ephemeral } as const;
-  if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
-  else await interaction.reply(payload);
+  try {
+    if (interaction.deferred || interaction.replied) await interaction.followUp(payload);
+    else await interaction.reply(payload);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? Number((error as { code: unknown }).code)
+      : 0;
+    if (code !== 10062 && code !== 40060) throw error;
+  }
 }
 
 export class ChessGateBot {
@@ -143,7 +149,9 @@ export class ChessGateBot {
     this.client.on("interactionCreate", (interaction) => {
       void this.handleInteraction(interaction).then(() => this.db.flush()).catch((error: unknown) => {
         console.error("Interaction failed", error);
-        void replyError(interaction, userFacingError(error));
+        void replyError(interaction, userFacingError(error)).catch((replyFailure: unknown) => {
+          console.error("Failed to send interaction error", replyFailure);
+        });
       });
     });
 
@@ -605,7 +613,7 @@ export class ChessGateBot {
     challenge: DailyPuzzleChallenge,
     attempt: DailyPuzzleAttempt,
     note: string
-  ): Promise<InteractionReplyOptions> {
+  ) {
     const filename = `solichess-attempt-${challenge.id}.png`;
     const board = await renderBoard(attempt.currentFen, challenge.userColor);
     const finished = attempt.solvedAt !== null;
@@ -622,9 +630,17 @@ export class ChessGateBot {
           .setCustomId(`${DAILY_PUZZLE_ANSWER_PREFIX}${challenge.id}`)
           .setLabel("أدخل النقلة")
           .setStyle(ButtonStyle.Success)
-      )],
-      flags: MessageFlags.Ephemeral
+      )]
     };
+  }
+
+  private async editDailyPuzzleAttemptReply(
+    interaction: ButtonInteraction | ModalSubmitInteraction,
+    challenge: DailyPuzzleChallenge,
+    attempt: DailyPuzzleAttempt,
+    note: string
+  ): Promise<void> {
+    await interaction.editReply(await this.dailyPuzzleAttemptPayload(challenge, attempt, note));
   }
 
   private newDailyPuzzleAttempt(challenge: DailyPuzzleChallenge, discordUserId: string): DailyPuzzleAttempt {
@@ -657,15 +673,18 @@ export class ChessGateBot {
       this.db.saveDailyPuzzleAttempt(attempt);
     }
     if (attempt.solvedAt !== null) {
-      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(challenge, attempt, "حلّك مسجل بالفعل."));
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      return void await this.editDailyPuzzleAttemptReply(interaction, challenge, attempt, "حلّك مسجل بالفعل.");
     }
 
     if (isOpen) {
-      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      return void await this.editDailyPuzzleAttemptReply(
+        interaction,
         challenge,
         attempt,
         attempt.currentIndex === 0 ? "ابدأ الحل عندما تكون جاهزًا." : "هذه وضعيتك الحالية؛ أكمل من حيث توقفت."
-      ));
+      );
     }
 
     const input = new TextInputBuilder()
@@ -692,8 +711,9 @@ export class ChessGateBot {
     }
     let attempt = this.db.getDailyPuzzleAttempt(challenge.id, interaction.user.id)
       ?? this.newDailyPuzzleAttempt(challenge, interaction.user.id);
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     if (attempt.solvedAt !== null) {
-      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(challenge, attempt, "حلّك مسجل بالفعل."));
+      return void await this.editDailyPuzzleAttemptReply(interaction, challenge, attempt, "حلّك مسجل بالفعل.");
     }
 
     const input = interaction.fields.getTextInputValue("daily_puzzle_move");
@@ -703,21 +723,23 @@ export class ChessGateBot {
     } catch {
       attempt = { ...attempt, mistakes: attempt.mistakes + 1, updatedAt: Date.now() };
       this.db.saveDailyPuzzleAttempt(attempt);
-      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(
+      return void await this.editDailyPuzzleAttemptReply(
+        interaction,
         challenge,
         attempt,
         "❌ النقلة غير قانونية أو صيغتها غير صحيحة، واحتُسبت محاولة خاطئة."
-      ));
+      );
     }
 
     if (result.kind === "wrong") {
       attempt = { ...attempt, mistakes: attempt.mistakes + 1, updatedAt: Date.now() };
       this.db.saveDailyPuzzleAttempt(attempt);
-      return void await interaction.reply(await this.dailyPuzzleAttemptPayload(
+      return void await this.editDailyPuzzleAttemptReply(
+        interaction,
         challenge,
         attempt,
         `❌ **${result.playedSan}** ليست أفضل نقلة. حاول مرة أخرى.`
-      ));
+      );
     }
 
     const solvedAt = result.kind === "solved" ? Date.now() : null;
@@ -735,7 +757,7 @@ export class ChessGateBot {
         ? `🏆 حل مثالي بدون أخطاء! آخر نقلة: **${result.playedSan}**.`
         : `✅ اكتمل الحل بعد **${attempt.mistakes}** ${attempt.mistakes === 1 ? "خطأ" : "أخطاء"}.`)
       : `✅ **${result.playedSan}** صحيحة. رد الخصم: **${result.opponentSan}** — أكمل الحل.`;
-    await interaction.reply(await this.dailyPuzzleAttemptPayload(challenge, attempt, note));
+    await this.editDailyPuzzleAttemptReply(interaction, challenge, attempt, note);
   }
 
   private formatDailyResultEntries(attempts: DailyPuzzleAttempt[], includeMistakes: boolean): string {
@@ -849,6 +871,8 @@ export class ChessGateBot {
         }
       }
       await this.db.flush();
+    } catch (error) {
+      console.error("Daily puzzle monitor failed", error);
     } finally {
       this.dailyPuzzleMonitorRunning = false;
     }
