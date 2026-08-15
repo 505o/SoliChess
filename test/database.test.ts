@@ -74,3 +74,33 @@ test("database persists puzzle sessions and stats", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("database persists interactive review sessions across restarts", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "chess-gate-review-test-"));
+  const databasePath = path.join(directory, "test.db");
+  const first = new AppDatabase(databasePath);
+  try {
+    first.saveReviewSession({
+      id: "abcdef123456",
+      guildId: "guild-1",
+      resultJson: JSON.stringify({ moves: [{ playedSan: "e4" }] }),
+      currentIndex: 0,
+      content: "review",
+      expiresAt: 10_000
+    });
+  } finally {
+    first.close();
+  }
+
+  const reopened = new AppDatabase(databasePath);
+  try {
+    assert.equal(reopened.getReviewSession("abcdef123456", "guild-1")?.content, "review");
+    reopened.updateReviewSessionIndex("abcdef123456", "guild-1", 1);
+    assert.equal(reopened.getReviewSession("abcdef123456", "guild-1")?.currentIndex, 1);
+    assert.equal(reopened.deleteExpiredReviewSessions(10_001), 1);
+    assert.equal(reopened.getReviewSession("abcdef123456", "guild-1"), null);
+  } finally {
+    reopened.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

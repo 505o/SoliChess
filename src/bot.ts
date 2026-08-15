@@ -53,6 +53,7 @@ interface ReviewSession {
   result: GameAnalysisResult;
   index: number;
   content: string;
+  expiresAt: number;
 }
 
 function challengeCode(): string {
@@ -112,6 +113,7 @@ export class ChessGateBot {
       console.log(`Logged in as ${readyClient.user.tag}`);
       await this.registerCommands();
       this.db.deleteExpiredPending();
+      this.db.deleteExpiredReviewSessions();
       setInterval(() => void this.refreshAll(), this.config.checkIntervalMinutes * 60_000).unref();
       setInterval(() => void this.monitorCompletedGames(), this.config.gameCheckIntervalMinutes * 60_000).unref();
       void (async () => {
@@ -557,12 +559,54 @@ export class ChessGateBot {
     return `${whiteEvaluation > 0 ? "+" : ""}${score} • أفضلية ${whiteEvaluation > 0 ? "للأبيض" : "للأسود"}`;
   }
 
-  private createReviewSession(result: GameAnalysisResult, content: string | null): { id: string; session: ReviewSession } {
+  private createReviewSession(
+    guildId: string,
+    result: GameAnalysisResult,
+    content: string | null
+  ): { id: string; session: ReviewSession } {
     const id = randomBytes(6).toString("hex");
-    const session: ReviewSession = { result, index: result.moves.length - 1, content: content ?? "" };
+    const session: ReviewSession = {
+      result,
+      index: result.moves.length - 1,
+      content: content ?? "",
+      expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000
+    };
     this.reviewSessions.set(id, session);
-    setTimeout(() => this.reviewSessions.delete(id), 2 * 60 * 60 * 1000).unref();
+    this.db.saveReviewSession({
+      id,
+      guildId,
+      resultJson: JSON.stringify(result),
+      currentIndex: session.index,
+      content: session.content,
+      expiresAt: session.expiresAt
+    });
     return { id, session };
+  }
+
+  private getReviewSession(id: string, guildId: string): ReviewSession | null {
+    const cached = this.reviewSessions.get(id);
+    if (cached && cached.expiresAt >= Date.now()) return cached;
+    this.reviewSessions.delete(id);
+
+    const stored = this.db.getReviewSession(id, guildId);
+    if (!stored || stored.expiresAt < Date.now()) {
+      this.db.deleteExpiredReviewSessions();
+      return null;
+    }
+    try {
+      const result = JSON.parse(stored.resultJson) as GameAnalysisResult;
+      if (!Array.isArray(result.moves) || result.moves.length === 0) return null;
+      const session: ReviewSession = {
+        result,
+        index: Math.max(0, Math.min(result.moves.length - 1, stored.currentIndex)),
+        content: stored.content,
+        expiresAt: stored.expiresAt
+      };
+      this.reviewSessions.set(id, session);
+      return session;
+    } catch {
+      return null;
+    }
   }
 
   private reviewComponents(id: string, index: number, moveCount: number): ActionRowBuilder<ButtonBuilder>[] {
@@ -627,7 +671,7 @@ export class ChessGateBot {
   private async handleReviewButton(interaction: ButtonInteraction): Promise<void> {
     const match = /^review_(first|prev|next|last):([a-f0-9]{12})$/.exec(interaction.customId);
     if (!match) return void await replyError(interaction, "زر المراجعة غير صالح.");
-    const session = this.reviewSessions.get(match[2]!);
+    const session = this.getReviewSession(match[2]!, interaction.guildId!);
     if (!session) return void await replyError(interaction, "انتهت جلسة المراجعة. استخدم /analyze لإنشاء مراجعة جديدة.");
 
     const lastIndex = session.result.moves.length - 1;
@@ -637,6 +681,7 @@ export class ChessGateBot {
       case "next": session.index = Math.min(lastIndex, session.index + 1); break;
       case "last": session.index = lastIndex; break;
     }
+    this.db.updateReviewSessionIndex(match[2]!, interaction.guildId!, session.index);
 
     await interaction.deferUpdate();
     await interaction.editReply({
@@ -662,7 +707,7 @@ export class ChessGateBot {
     try {
       const game = await this.chess.getLatestCompletedGame(link.chessUsername);
       const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
-      const review = this.createReviewSession(result, null);
+      const review = this.createReviewSession(interaction.guildId!, result, null);
       await interaction.editReply(await this.gameAnalysisPayload(review.id, review.session));
       this.db.audit(interaction.guildId!, interaction.user.id, "game_analyzed", { gameUrl: result.gameUrl, depth: result.engineDepth });
     } catch (error) {
@@ -868,7 +913,7 @@ export class ChessGateBot {
           if (!channel?.isTextBased() || channel.isDMBased()) continue;
 
           const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
-          const review = this.createReviewSession(result, `♟️ مراجعة تلقائية لمباراة <@${link.discordUserId}> الجديدة`);
+          const review = this.createReviewSession(link.guildId, result, `♟️ مراجعة تلقائية لمباراة <@${link.discordUserId}> الجديدة`);
           await channel.send(await this.gameAnalysisPayload(review.id, review.session));
           this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, game.url);
           this.db.audit(link.guildId, link.discordUserId, "automatic_game_analysis", { gameUrl: game.url, depth: result.engineDepth });

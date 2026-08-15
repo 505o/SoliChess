@@ -62,6 +62,24 @@ interface PuzzleStatsRow {
   updated_at: number;
 }
 
+interface ReviewSessionRow {
+  id: string;
+  guild_id: string;
+  result_json: string;
+  current_index: number;
+  content: string;
+  expires_at: number;
+}
+
+export interface PersistedReviewSession {
+  id: string;
+  guildId: string;
+  resultJson: string;
+  currentIndex: number;
+  content: string;
+  expiresAt: number;
+}
+
 function mapGuild(row: GuildSettingsRow): GuildSettings {
   return {
     guildId: row.guild_id,
@@ -217,8 +235,18 @@ export class AppDatabase {
         PRIMARY KEY (guild_id, discord_user_id)
       );
 
+      CREATE TABLE IF NOT EXISTS review_sessions (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        current_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_links_guild ON links(guild_id);
       CREATE INDEX IF NOT EXISTS idx_pending_expiry ON pending_verifications(expires_at);
+      CREATE INDEX IF NOT EXISTS idx_review_session_expiry ON review_sessions(expires_at);
     `);
     this.ensureColumn("guild_settings", "analysis_channel_id", "TEXT");
     this.ensureColumn("links", "last_analyzed_game_url", "TEXT");
@@ -468,6 +496,49 @@ export class AppDatabase {
       "SELECT * FROM puzzle_stats WHERE guild_id = ? ORDER BY rating DESC, solved DESC LIMIT 20"
     ).all(guildId) as unknown as PuzzleStatsRow[];
     return rows.map(mapPuzzleStats);
+  }
+
+  saveReviewSession(session: PersistedReviewSession): void {
+    this.db.prepare(`
+      INSERT INTO review_sessions (id, guild_id, result_json, current_index, content, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        result_json = excluded.result_json,
+        current_index = excluded.current_index,
+        content = excluded.content,
+        expires_at = excluded.expires_at
+    `).run(
+      session.id,
+      session.guildId,
+      session.resultJson,
+      session.currentIndex,
+      session.content,
+      session.expiresAt
+    );
+  }
+
+  getReviewSession(id: string, guildId: string): PersistedReviewSession | null {
+    const row = this.db.prepare(
+      "SELECT * FROM review_sessions WHERE id = ? AND guild_id = ?"
+    ).get(id, guildId) as ReviewSessionRow | undefined;
+    return row ? {
+      id: row.id,
+      guildId: row.guild_id,
+      resultJson: row.result_json,
+      currentIndex: row.current_index,
+      content: row.content,
+      expiresAt: row.expires_at
+    } : null;
+  }
+
+  updateReviewSessionIndex(id: string, guildId: string, currentIndex: number): void {
+    this.db.prepare(
+      "UPDATE review_sessions SET current_index = ? WHERE id = ? AND guild_id = ?"
+    ).run(currentIndex, id, guildId);
+  }
+
+  deleteExpiredReviewSessions(now = Date.now()): number {
+    return Number(this.db.prepare("DELETE FROM review_sessions WHERE expires_at < ?").run(now).changes);
   }
 
   close(): void {
