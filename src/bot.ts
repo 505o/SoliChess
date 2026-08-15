@@ -1,4 +1,4 @@
-import { randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import {
   ActionRowBuilder,
   AttachmentBuilder,
@@ -8,6 +8,7 @@ import {
   ChatInputCommandInteraction,
   Client,
   EmbedBuilder,
+  Events,
   GatewayIntentBits,
   Guild,
   GuildMember,
@@ -24,7 +25,7 @@ import type { AppConfig } from "./config.js";
 import { ChessComApiError, ChessComClient, isClosedStatus, isFairPlayClosure, ratingSnapshot } from "./chesscom.js";
 import { commandJson } from "./commands.js";
 import { AppDatabase } from "./database.js";
-import { renderBoard, renderEvaluationGraph } from "./board-renderer.js";
+import { renderBoard } from "./board-renderer.js";
 import { analyzeCompletedGame, type GameAnalysisResult, type MoveClassification } from "./game-analysis.js";
 import { LichessPuzzleClient } from "./lichess-puzzles.js";
 import {
@@ -45,6 +46,13 @@ const LINK_MODAL_ID = "chess_link_modal";
 const CHECK_BUTTON_ID = "chess_link_check";
 const PUZZLE_MOVE_PREFIX = "puzzle_move:";
 const PUZZLE_MODAL_PREFIX = "puzzle_move_modal:";
+const REVIEW_BUTTON_PREFIX = "review_";
+
+interface ReviewSession {
+  result: GameAnalysisResult;
+  index: number;
+  content: string;
+}
 
 function challengeCode(): string {
   return `DC-${randomInt(100_000, 1_000_000)}`;
@@ -86,6 +94,7 @@ export class ChessGateBot {
   private readonly engine = new StockfishEngine();
   private readonly analysesInProgress = new Set<string>();
   private readonly lastAnalysisAt = new Map<string, number>();
+  private readonly reviewSessions = new Map<string, ReviewSession>();
   private monitorRunning = false;
   private gameMonitorRunning = false;
 
@@ -98,7 +107,7 @@ export class ChessGateBot {
   }
 
   async start(): Promise<void> {
-    this.client.once("ready", async (readyClient) => {
+    this.client.once(Events.ClientReady, async (readyClient) => {
       console.log(`Logged in as ${readyClient.user.tag}`);
       await this.registerCommands();
       this.db.deleteExpiredPending();
@@ -138,6 +147,7 @@ export class ChessGateBot {
     if (interaction.isButton()) {
       if (interaction.customId === "chess_link_start") return void await this.openLinkModal(interaction);
       if (interaction.customId === CHECK_BUTTON_ID) return void await this.checkChallenge(interaction);
+      if (interaction.customId.startsWith(REVIEW_BUTTON_PREFIX)) return void await this.handleReviewButton(interaction);
       if (interaction.customId.startsWith("puzzle_")) return void await this.handlePuzzleButton(interaction);
     }
 
@@ -514,18 +524,59 @@ export class ChessGateBot {
 
   private analysisLabel(classification: MoveClassification): string {
     const labels: Record<MoveClassification, string> = {
-      best: "ممتازة",
-      excellent: "جيدة جدًا",
+      brilliant: "💎 عبقرية",
+      best: "⭐ أفضل نقلة",
+      excellent: "✅ ممتازة",
+      good: "👍 جيدة",
       inaccuracy: "غير دقيقة",
-      mistake: "خطأ",
-      blunder: "خطأ كبير"
+      mistake: "❓ خطأ",
+      blunder: "⁉️ بلندر"
     };
     return labels[classification];
   }
 
-  private async gameAnalysisPayload(result: GameAnalysisResult) {
-    const graph = await renderEvaluationGraph(result.whiteEvaluations);
-    const filename = "solichess-analysis.png";
+  private analysisColor(classification: MoveClassification): number {
+    const colors: Record<MoveClassification, number> = {
+      brilliant: 0x1baca6,
+      best: 0x81b64c,
+      excellent: 0x96bc4b,
+      good: 0x95a5a6,
+      inaccuracy: 0xf7c631,
+      mistake: 0xe58f2a,
+      blunder: 0xfa412d
+    };
+    return colors[classification];
+  }
+
+  private evaluationText(whiteEvaluation: number): string {
+    if (Math.abs(whiteEvaluation) >= 99_000) return whiteEvaluation > 0 ? "مات لصالح الأبيض" : "مات لصالح الأسود";
+    const score = (whiteEvaluation / 100).toFixed(2);
+    if (Math.abs(whiteEvaluation) < 10) return "0.00 • متعادل";
+    return `${whiteEvaluation > 0 ? "+" : ""}${score} • أفضلية ${whiteEvaluation > 0 ? "للأبيض" : "للأسود"}`;
+  }
+
+  private createReviewSession(result: GameAnalysisResult, content: string | null): { id: string; session: ReviewSession } {
+    const id = randomBytes(6).toString("hex");
+    const session: ReviewSession = { result, index: result.moves.length - 1, content: content ?? "" };
+    this.reviewSessions.set(id, session);
+    setTimeout(() => this.reviewSessions.delete(id), 2 * 60 * 60 * 1000).unref();
+    return { id, session };
+  }
+
+  private reviewComponents(id: string, index: number, moveCount: number): ActionRowBuilder<ButtonBuilder>[] {
+    return [new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId(`review_first:${id}`).setEmoji("⏮️").setStyle(ButtonStyle.Secondary).setDisabled(index === 0),
+      new ButtonBuilder().setCustomId(`review_prev:${id}`).setEmoji("◀️").setLabel("السابقة").setStyle(ButtonStyle.Primary).setDisabled(index === 0),
+      new ButtonBuilder().setCustomId(`review_next:${id}`).setLabel("التالية").setEmoji("▶️").setStyle(ButtonStyle.Primary).setDisabled(index === moveCount - 1),
+      new ButtonBuilder().setCustomId(`review_last:${id}`).setEmoji("⏭️").setStyle(ButtonStyle.Secondary).setDisabled(index === moveCount - 1)
+    )];
+  }
+
+  private async gameAnalysisPayload(id: string, session: ReviewSession) {
+    const { result, index } = session;
+    const move = result.moves[index]!;
+    const board = await renderBoard(move.fenAfter, result.color, move.playedUci, move.bestUci ?? undefined, move.whiteEvaluation);
+    const filename = `solichess-review-${id}.png`;
     const resultNames: Record<string, string> = {
       win: "فوز",
       checkmated: "خسارة بالمات",
@@ -537,32 +588,55 @@ export class ChessGateBot {
       insufficient: "تعادل لنقص القطع",
       "50move": "تعادل بقاعدة الخمسين"
     };
-    const criticalFields = result.criticalMoves.slice(0, 3).map((move) => ({
-      name: `${result.color === "w" ? `${move.moveNumber}.` : `${move.moveNumber}...`} ${move.playedSan} — ${this.analysisLabel(move.classification)}`,
-      value: `الأفضل: **${move.bestSan}**\nالمسار: ${move.principalVariation || "—"}\nالخسارة التقريبية: ${move.centipawnLoss >= 10_000 ? "حاسمة" : (move.centipawnLoss / 100).toFixed(2)}`,
-      inline: false
-    }));
+    const movePrefix = move.color === "w" ? `${move.moveNumber}.` : `${move.moveNumber}...`;
+    const lossText = move.centipawnLoss >= 10_000 ? "حاسمة" : `${(move.centipawnLoss / 100).toFixed(2)} بيدق`;
+    const summary = `💎 ${result.counts.brilliant} • ⭐ ${result.counts.best} • ✅ ${result.counts.excellent} • 👍 ${result.counts.good} • ?! ${result.counts.inaccuracy} • ? ${result.counts.mistake} • ?? ${result.counts.blunder}`;
     const embed = new EmbedBuilder()
-      .setColor(result.counts.blunder > 0 ? 0xed4245 : 0x57f287)
+      .setColor(this.analysisColor(move.classification))
       .setTitle(`مراجعة ${result.username} ضد ${result.opponent}`)
       .setURL(result.gameUrl)
-      .setDescription(`النتيجة: **${resultNames[result.result] ?? result.result}** • ${result.timeClass}\nاللون: **${colorName(result.color)}**`)
+      .setDescription(
+        `النتيجة: **${resultNames[result.result] ?? result.result}** • ${result.timeClass} • لعبت بـ**${colorName(result.color)}**\n` +
+        `الدقة التقديرية: **${result.approximateAccuracy}%**\n\n${summary}`
+      )
       .addFields(
-        { name: "الدقة التقديرية", value: `${result.approximateAccuracy}%`, inline: true },
-        { name: "متوسط خسارة السنتيبون", value: String(result.averageCentipawnLoss), inline: true },
-        { name: "النقلات المحللة", value: String(result.moveCount), inline: true },
-        { name: "غير دقيقة", value: String(result.counts.inaccuracy), inline: true },
-        { name: "أخطاء", value: String(result.counts.mistake), inline: true },
-        { name: "أخطاء كبيرة", value: String(result.counts.blunder), inline: true },
-        ...criticalFields
+        { name: `النقلة ${move.ply}/${result.moves.length}`, value: `**${movePrefix} ${move.playedSan}**`, inline: true },
+        { name: "تصنيف النقلة", value: `**${this.analysisLabel(move.classification)}**`, inline: true },
+        { name: "تقييم المحرك", value: this.evaluationText(move.whiteEvaluation), inline: true },
+        { name: "أفضل نقلة", value: `**${move.bestSan}**`, inline: true },
+        { name: "خسارة النقلة", value: lossText, inline: true },
+        { name: "متوسط خسارتك", value: `${(result.averageCentipawnLoss / 100).toFixed(2)} بيدق`, inline: true },
+        { name: "مسار Stockfish المقترح", value: move.principalVariation || "—", inline: false }
       )
       .setImage(`attachment://${filename}`)
-      .setFooter({ text: `Stockfish 18 Lite • عمق ${result.engineDepth} • الدقة تقدير خاص بـSoliChess وليست دقة Chess.com` });
+      .setFooter({ text: `السهم الأخضر = أفضل نقلة • Stockfish 18 Lite • عمق ${result.engineDepth} • التصنيفات تقديرية من SoliChess` });
     return {
-      content: null,
+      content: session.content,
       embeds: [embed],
-      files: [new AttachmentBuilder(graph, { name: filename })]
+      components: this.reviewComponents(id, index, result.moves.length),
+      files: [new AttachmentBuilder(board, { name: filename })]
     };
+  }
+
+  private async handleReviewButton(interaction: ButtonInteraction): Promise<void> {
+    const match = /^review_(first|prev|next|last):([a-f0-9]{12})$/.exec(interaction.customId);
+    if (!match) return void await replyError(interaction, "زر المراجعة غير صالح.");
+    const session = this.reviewSessions.get(match[2]!);
+    if (!session) return void await replyError(interaction, "انتهت جلسة المراجعة. استخدم /analyze لإنشاء مراجعة جديدة.");
+
+    const lastIndex = session.result.moves.length - 1;
+    switch (match[1]) {
+      case "first": session.index = 0; break;
+      case "prev": session.index = Math.max(0, session.index - 1); break;
+      case "next": session.index = Math.min(lastIndex, session.index + 1); break;
+      case "last": session.index = lastIndex; break;
+    }
+
+    await interaction.deferUpdate();
+    await interaction.editReply({
+      ...await this.gameAnalysisPayload(match[2]!, session),
+      attachments: []
+    });
   }
 
   private async handleAnalyze(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -582,7 +656,8 @@ export class ChessGateBot {
     try {
       const game = await this.chess.getLatestCompletedGame(link.chessUsername);
       const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
-      await interaction.editReply(await this.gameAnalysisPayload(result));
+      const review = this.createReviewSession(result, null);
+      await interaction.editReply(await this.gameAnalysisPayload(review.id, review.session));
       this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, result.gameUrl);
       this.db.audit(interaction.guildId!, interaction.user.id, "game_analyzed", { gameUrl: result.gameUrl, depth: result.engineDepth });
     } catch (error) {
@@ -755,8 +830,8 @@ export class ChessGateBot {
           if (!channel?.isTextBased() || channel.isDMBased()) continue;
 
           const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
-          const payload = await this.gameAnalysisPayload(result);
-          await channel.send({ ...payload, content: `♟️ مراجعة تلقائية لمباراة <@${link.discordUserId}> الجديدة` });
+          const review = this.createReviewSession(result, `♟️ مراجعة تلقائية لمباراة <@${link.discordUserId}> الجديدة`);
+          await channel.send(await this.gameAnalysisPayload(review.id, review.session));
           this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, game.url);
           this.db.audit(link.guildId, link.discordUserId, "automatic_game_analysis", { gameUrl: game.url, depth: result.engineDepth });
         } catch (error) {

@@ -7,7 +7,8 @@ import type { ChessComGame } from "../src/types.js";
 test("move loss classification uses SoliChess thresholds", () => {
   assert.equal(classifyLoss(0, "e2e4", "e2e4"), "best");
   assert.equal(classifyLoss(40, "d2d4", "e2e4"), "excellent");
-  assert.equal(classifyLoss(90, "d2d4", "e2e4"), "inaccuracy");
+  assert.equal(classifyLoss(80, "d2d4", "e2e4"), "good");
+  assert.equal(classifyLoss(120, "d2d4", "e2e4"), "inaccuracy");
   assert.equal(classifyLoss(180, "d2d4", "e2e4"), "mistake");
   assert.equal(classifyLoss(400, "d2d4", "e2e4"), "blunder");
 });
@@ -34,4 +35,7 @@ test("Stockfish analyzes a completed game and reports the requested player", asy
   assert.equal(result.moveCount, 2);
   assert.ok(result.counts.blunder >= 1);
   assert.ok(result.whiteEvaluations.length === 5);
+  assert.equal(result.moves.length, 4);
+  assert.equal(result.moves.at(-1)?.playedSan, "Qh4#");
+  assert.ok(result.moves.every((move) => Boolean(move.fenAfter)));
 });

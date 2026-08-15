@@ -19,10 +19,24 @@ function squareName(boardRow: number, boardColumn: number): string {
   return `${FILES[boardColumn]}${8 - boardRow}`;
 }
 
+function squareCenter(square: string, orientation: Color): { x: number; y: number } {
+  const file = FILES.indexOf(square[0] as (typeof FILES)[number]);
+  const rank = Number.parseInt(square[1]!, 10);
+  const boardRow = 8 - rank;
+  const displayColumn = orientation === "w" ? file : 7 - file;
+  const displayRow = orientation === "w" ? boardRow : 7 - boardRow;
+  return {
+    x: BOARD_MARGIN + displayColumn * SQUARE + SQUARE / 2,
+    y: BOARD_MARGIN + displayRow * SQUARE + SQUARE / 2
+  };
+}
+
 export async function renderBoard(
   fen: string,
   orientation: Color,
-  highlightedMove?: string
+  highlightedMove?: string,
+  bestMove?: string,
+  whiteEvaluation?: number
 ): Promise<Buffer> {
   const chess = new Chess(fen);
   const position = chess.board();
@@ -32,7 +46,9 @@ export async function renderBoard(
     highlighted.add(highlightedMove.slice(2, 4));
   }
 
-  const elements: string[] = [];
+  const squares: string[] = [];
+  const pieces: string[] = [];
+  const labels: string[] = [];
   for (let displayRow = 0; displayRow < 8; displayRow += 1) {
     for (let displayColumn = 0; displayColumn < 8; displayColumn += 1) {
       const boardRow = orientation === "w" ? displayRow : 7 - displayRow;
@@ -42,14 +58,14 @@ export async function renderBoard(
       const name = squareName(boardRow, boardColumn);
       const light = (boardRow + boardColumn) % 2 === 0;
       const fill = highlighted.has(name) ? "#d8b64c" : light ? "#e7e1d5" : "#67826f";
-      elements.push(`<rect x="${x}" y="${y}" width="${SQUARE}" height="${SQUARE}" fill="${fill}"/>`);
+      squares.push(`<rect x="${x}" y="${y}" width="${SQUARE}" height="${SQUARE}" fill="${fill}"/>`);
 
       const piece = position[boardRow]?.[boardColumn];
       if (piece) {
         const glyph = PIECES[piece.color][piece.type];
         const color = piece.color === "w" ? "#fafafa" : "#16181d";
         const stroke = piece.color === "w" ? "#30343b" : "#e2e4e8";
-        elements.push(
+        pieces.push(
           `<text x="${x + SQUARE / 2}" y="${y + 61}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI Symbol, serif" font-size="68" fill="${color}" stroke="${stroke}" stroke-width="1.4" paint-order="stroke">${glyph}</text>`
         );
       }
@@ -59,14 +75,37 @@ export async function renderBoard(
   for (let index = 0; index < 8; index += 1) {
     const fileIndex = orientation === "w" ? index : 7 - index;
     const rank = orientation === "w" ? 8 - index : index + 1;
-    elements.push(`<text x="${BOARD_MARGIN + index * SQUARE + SQUARE / 2}" y="${BOARD_MARGIN + BOARD_SIZE + 30}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#aeb4be">${FILES[fileIndex]}</text>`);
-    elements.push(`<text x="22" y="${BOARD_MARGIN + index * SQUARE + 50}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#aeb4be">${rank}</text>`);
+    labels.push(`<text x="${BOARD_MARGIN + index * SQUARE + SQUARE / 2}" y="${BOARD_MARGIN + BOARD_SIZE + 30}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#aeb4be">${FILES[fileIndex]}</text>`);
+    labels.push(`<text x="22" y="${BOARD_MARGIN + index * SQUARE + 50}" text-anchor="middle" font-family="system-ui, sans-serif" font-size="18" fill="#aeb4be">${rank}</text>`);
+  }
+
+  let bestArrow = "";
+  if (bestMove && /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(bestMove)) {
+    const from = squareCenter(bestMove.slice(0, 2), orientation);
+    const to = squareCenter(bestMove.slice(2, 4), orientation);
+    bestArrow = `<line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="#43d17a" stroke-width="18" stroke-opacity="0.82" stroke-linecap="round" marker-end="url(#best-arrow)"/>`;
+  }
+
+  let evaluationBar = "";
+  if (whiteEvaluation !== undefined) {
+    const normalized = Math.max(-1000, Math.min(1000, whiteEvaluation));
+    const whiteShare = 1 / (1 + Math.exp(-normalized / 260));
+    const whiteHeight = Math.max(8, Math.min(632, BOARD_SIZE * whiteShare));
+    const whiteY = orientation === "w" ? BOARD_MARGIN + BOARD_SIZE - whiteHeight : BOARD_MARGIN;
+    evaluationBar = `<rect x="704" y="${BOARD_MARGIN}" width="20" height="${BOARD_SIZE}" rx="10" fill="#15171b"/>
+      <rect x="704" y="${whiteY}" width="20" height="${whiteHeight}" rx="10" fill="#f2f3f5"/>
+      <rect x="704" y="${BOARD_MARGIN}" width="20" height="${BOARD_SIZE}" rx="10" fill="none" stroke="#656b75" stroke-width="2"/>`;
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="736" height="736" viewBox="0 0 736 736">
+    <defs><marker id="best-arrow" markerWidth="5" markerHeight="5" refX="3.5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#43d17a" fill-opacity="0.9"/></marker></defs>
     <rect width="736" height="736" rx="24" fill="#171a20"/>
     <rect x="40" y="40" width="656" height="656" rx="10" fill="#252932"/>
-    ${elements.join("")}
+    ${squares.join("")}
+    ${bestArrow}
+    ${pieces.join("")}
+    ${labels.join("")}
+    ${evaluationBar}
   </svg>`;
 
   return sharp(Buffer.from(svg)).png().toBuffer();

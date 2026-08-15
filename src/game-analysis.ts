@@ -2,7 +2,23 @@ import { Chess, type Color, type Move, type Square } from "chess.js";
 import type { ChessComGame } from "./types.js";
 import { type EngineEvaluation, StockfishEngine } from "./stockfish.js";
 
-export type MoveClassification = "best" | "excellent" | "inaccuracy" | "mistake" | "blunder";
+export type MoveClassification = "brilliant" | "best" | "excellent" | "good" | "inaccuracy" | "mistake" | "blunder";
+
+export interface AnalyzedMove {
+  ply: number;
+  moveNumber: number;
+  color: Color;
+  playedSan: string;
+  playedUci: string;
+  bestSan: string;
+  bestUci: string | null;
+  principalVariation: string;
+  centipawnLoss: number;
+  classification: MoveClassification;
+  fenBefore: string;
+  fenAfter: string;
+  whiteEvaluation: number;
+}
 
 export interface CriticalMove {
   moveNumber: number;
@@ -26,6 +42,7 @@ export interface GameAnalysisResult {
   averageCentipawnLoss: number;
   counts: Record<MoveClassification, number>;
   criticalMoves: CriticalMove[];
+  moves: AnalyzedMove[];
   whiteEvaluations: number[];
   engineDepth: number;
 }
@@ -63,9 +80,23 @@ function pvToSan(fen: string, variation: string[], limit = 4): string {
 export function classifyLoss(loss: number, playedUci: string, bestMove: string | null): MoveClassification {
   if (playedUci === bestMove || loss <= 20) return "best";
   if (loss <= 60) return "excellent";
-  if (loss <= 120) return "inaccuracy";
+  if (loss <= 90) return "good";
+  if (loss <= 150) return "inaccuracy";
   if (loss <= 250) return "mistake";
   return "blunder";
+}
+
+const PIECE_VALUES = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 20_000 } as const;
+
+function isBrilliantSacrifice(move: Move, playedUci: string, bestMove: string | null, loss: number): boolean {
+  if (playedUci !== bestMove || loss > 15) return false;
+  const board = new Chess(move.after);
+  const movedValue = PIECE_VALUES[move.piece];
+  const capturedValue = move.captured ? PIECE_VALUES[move.captured] : 0;
+  const opponent: Color = move.color === "w" ? "b" : "w";
+  return movedValue >= PIECE_VALUES.n
+    && movedValue - capturedValue >= 200
+    && board.isAttacked(move.to, opponent);
 }
 
 function approximateAccuracy(averageLoss: number): number {
@@ -110,29 +141,53 @@ export async function analyzeCompletedGame(
   }
 
   const counts: Record<MoveClassification, number> = {
+    brilliant: 0,
     best: 0,
     excellent: 0,
+    good: 0,
     inaccuracy: 0,
     mistake: 0,
     blunder: 0
   };
   const playerMoves: CriticalMove[] = [];
+  const analyzedMoves: AnalyzedMove[] = [];
   const losses: number[] = [];
 
   for (let index = 0; index < moves.length; index += 1) {
     const move = moves[index]!;
-    if (move.color !== color) continue;
     const before = evaluations[index]!;
     const after = evaluations[index + 1]!;
     const loss = Math.max(0, Math.min(100_000, before.centipawns + after.centipawns));
     const playedUci = moveToUci(move);
-    const classification = classifyLoss(loss, playedUci, before.bestMove);
+    const baseClassification = classifyLoss(loss, playedUci, before.bestMove);
+    const classification = isBrilliantSacrifice(move, playedUci, before.bestMove, loss) ? "brilliant" : baseClassification;
+    const bestBoard = new Chess(move.before);
+    const best = before.bestMove ? playUci(bestBoard, before.bestMove) : null;
+    const turnAfter = move.after.split(" ")[1];
+    const scoreAfter = after.centipawns;
+    const whiteEvaluation = turnAfter === "w" ? scoreAfter : -scoreAfter;
+
+    analyzedMoves.push({
+      ply: index + 1,
+      moveNumber: Math.floor(index / 2) + 1,
+      color: move.color,
+      playedSan: move.san,
+      playedUci,
+      bestSan: best?.san ?? "—",
+      bestUci: before.bestMove,
+      principalVariation: pvToSan(move.before, before.principalVariation, 6),
+      centipawnLoss: loss,
+      classification,
+      fenBefore: move.before,
+      fenAfter: move.after,
+      whiteEvaluation
+    });
+
+    if (move.color !== color) continue;
     counts[classification] += 1;
     losses.push(loss);
 
     if (classification === "inaccuracy" || classification === "mistake" || classification === "blunder") {
-      const bestBoard = new Chess(move.before);
-      const best = before.bestMove ? playUci(bestBoard, before.bestMove) : null;
       playerMoves.push({
         moveNumber: Math.floor(index / 2) + 1,
         playedSan: move.san,
@@ -164,6 +219,7 @@ export async function analyzeCompletedGame(
     averageCentipawnLoss: averageLoss,
     counts,
     criticalMoves: playerMoves.sort((first, second) => second.centipawnLoss - first.centipawnLoss).slice(0, 5),
+    moves: analyzedMoves,
     whiteEvaluations,
     engineDepth: Math.min(...evaluations.map((evaluation) => evaluation.depth || depth))
   };
