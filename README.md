@@ -1,73 +1,35 @@
 # SoliChess
 
-SoliChess is a Discord bot for mandatory Chess.com account verification, rating roles, server leaderboards, and public account-status monitoring.
+SoliChess is a private Discord bot developed for a single chess community. It is not publicly distributed and is not currently offered for installation in third-party servers.
 
-## Current features
+## About
 
-- One onboarding channel containing the rules and a native Discord verification button.
-- Temporary ownership verification using a short code in the public Chess.com `Location` field.
-- One-to-one linking based on the stable Chess.com `player_id`.
-- Rapid, Blitz, Bullet, and chess-title roles.
-- `/profile` and `/leaderboard` commands with rankings inside the Discord server.
-- Periodic account-status checks and quarantine for closed accounts.
-- Administrative restoration and unlinking with an audit trail.
-- Health endpoint and the registered OAuth callback route.
+The bot creates a structured chess community experience inside Discord. New members connect their Chess.com account before receiving access to the server, helping the community reduce impersonation and duplicate account linking.
 
-The temporary profile challenge will be replaced with Chess.com OAuth after application approval. SoliChess never asks for a Chess.com or Discord password and does not provide assistance during active games.
+After verification, SoliChess uses public Chess.com data to display player information and assign roles based on:
 
-## Requirements
+- Rapid rating
+- Blitz rating
+- Bullet rating
+- Verified chess titles
+- Ranking among verified members of the Discord server
 
-- Node.js 24 or later
-- A Discord application and bot token
-- Discord's **Server Members Intent** enabled
+SoliChess also monitors public account-status changes, maintains an administrative audit trail, and provides a review process for accounts that require moderator attention.
 
-## Setup
+## Account connection
 
-1. Copy `.env.example` to `.env`.
-2. Fill in `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `DISCORD_GUILD_ID`, and `CHESSCOM_USER_AGENT` locally. Never commit `.env`.
-3. Install and verify the project:
+SoliChess currently includes a temporary profile-based ownership challenge for development. The intended production flow uses Chess.com OAuth so members can confirm account ownership without sharing passwords or relying on editable profile information.
 
-```powershell
-npm install
-npm run check
-```
+The bot never requests or stores Chess.com or Discord passwords. A connected Chess.com account cannot be switched automatically by the member; exceptional corrections are handled by server administrators and recorded for security purposes.
 
-4. Start the bot:
+## Fair play
 
-```powershell
-npm run dev
-```
+SoliChess does not provide assistance during active games. Any future game-review feature will only process completed games and will be designed for post-game learning.
 
-5. Run `/setup` inside the Discord server. Select `lock_existing: true` to require verification before members can see existing channels.
-6. Check the result with Discord's **View Server As Role** feature before inviting members.
+## Project status
 
-The bot needs View Channels, Send Messages, Embed Links, Read Message History, Manage Roles, and Manage Channels. Its role must be above every role it assigns. Do not grant Administrator.
-
-## OAuth callback
-
-The development callback registered with Chess.com is:
-
-```text
-http://localhost:3000/oauth/chesscom/callback
-```
-
-The route exists now but intentionally returns `503 OAuth setup pending` until Chess.com supplies the client credentials and endpoint details. A production deployment must use its exact public HTTPS callback URL. Wildcards and redirect mismatches will not work.
-
-Health check:
-
-```text
-GET /health
-```
-
-## Commands
-
-- `/setup lock_existing log_channel?`
-- `/profile member?`
-- `/leaderboard mode`
-- `/refresh member`
-- `/restore member`
-- `/unlink member reason`
+The bot is under active private development. Chess.com OAuth integration is pending application approval and official client details.
 
 ## Privacy
 
-See [PRIVACY.md](./PRIVACY.md).
+See the [SoliChess Privacy Policy](./PRIVACY.md) for information about the public account data and Discord identifiers processed by the bot.
