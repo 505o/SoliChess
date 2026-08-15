@@ -59,7 +59,7 @@ export class StockfishEngine {
         if (settled) return;
         engine.sendCommand("stop");
         settled = true;
-        reject(new Error("Stockfish analysis timed out"));
+        reject(new Error("انتهت مهلة المراجعة. حاول مرة أخرى."));
       }, 20_000);
 
       engine.listener = (rawLine: string) => {

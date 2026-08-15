@@ -648,18 +648,18 @@ export class ChessGateBot {
       .addFields(
         { name: `النقلة ${move.ply}/${result.moves.length}`, value: `\`${movePrefix} ${move.playedSan}\``, inline: true },
         { name: "تصنيف النقلة", value: `**${this.analysisLabel(move.classification)}**`, inline: true },
-        { name: "تقييم المحرك", value: this.evaluationText(move.whiteEvaluation), inline: true },
+        { name: "تقييم الوضع", value: this.evaluationText(move.whiteEvaluation), inline: true },
         { name: "أفضل نقلة", value: `\`${move.bestSan}\``, inline: true },
         { name: "خسارة النقلة", value: lossText, inline: true },
         { name: "متوسط خسارتك", value: `${(result.averageCentipawnLoss / 100).toFixed(2)} بيدق`, inline: true },
         {
-          name: "مسار Stockfish المقترح",
+          name: "المسار المقترح",
           value: move.principalVariation ? `\`\`\`\n${move.principalVariation}\n\`\`\`` : "—",
           inline: false
         }
       )
       .setImage(`attachment://${filename}`)
-      .setFooter({ text: `السهم الأخضر = أفضل نقلة • Stockfish 18 Lite • عمق ${result.engineDepth} • التصنيفات تقديرية من SoliChess` });
+      .setFooter({ text: `السهم الأخضر = أفضل نقلة • عمق التحليل ${result.engineDepth} • التصنيفات تقديرية من SoliChess` });
     return {
       content: session.content,
       embeds: [embed],
@@ -703,7 +703,7 @@ export class ChessGateBot {
     this.analysesInProgress.add(key);
     this.lastAnalysisAt.set(key, Date.now());
     await interaction.deferReply();
-    await interaction.editReply("جاري جلب آخر مباراة مكتملة وتحليلها بواسطة Stockfish…");
+    await interaction.editReply("جاري جلب آخر مباراة مكتملة ومراجعتها بدقة…");
     try {
       const game = await this.chess.getLatestCompletedGame(link.chessUsername);
       const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
@@ -762,7 +762,7 @@ export class ChessGateBot {
           .setTitle("✅ تم تفعيل مراجعات المباريات التلقائية")
           .setDescription(
             `سيراقب SoliChess مباريات الأعضاء المرتبطين كل **${this.config.gameCheckIntervalMinutes} دقيقة**، ` +
-            "وعند اكتشاف مباراة مكتملة جديدة سينشر مراجعة Stockfish التفاعلية هنا."
+            "وعند اكتشاف مباراة مكتملة جديدة سينشر مراجعة تفاعلية هنا."
           )
           .setFooter({ text: "لن تُعاد مراجعة مباراة سبق تحليلها" })]
       });

@@ -18,7 +18,7 @@ SoliChess also monitors public account-status changes, maintains an administrati
 
 Members can solve interactive tactical puzzles directly in Discord using rendered chessboards, move validation, hints, puzzle ratings, streaks, and server rankings. Puzzle positions come from the Lichess open puzzle database under CC0.
 
-The bot monitors connected accounts for newly completed Chess.com games and posts one automatic review in a dedicated Discord channel. Members can also request the latest review manually. Reviews are powered by Stockfish and open on the final board position with interactive move navigation, an evaluation bar, the engine's best move and principal variation, and SoliChess move classifications such as brilliant, best, inaccuracy, mistake, and blunder.
+The bot monitors connected accounts for newly completed Chess.com games and posts one automatic review in a dedicated Discord channel. Members can also request the latest review manually. Reviews open on the final board position with interactive move navigation, an evaluation bar, the best move and principal variation, and SoliChess move classifications such as brilliant, best, inaccuracy, mistake, and blunder.
 
 Administrators configure or replace the automatic review channel independently with `/setup-reviews`; manual `/analyze` requests do not suppress the automatic channel post.
 
