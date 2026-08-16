@@ -1,46 +1,20 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { Chess, type Color, type PieceSymbol } from "chess.js";
 import sharp from "sharp";
 
-const PIECE_SYMBOLS = `
-  <symbol id="piece-p" viewBox="0 0 100 100">
-    <circle cx="50" cy="23" r="13"/>
-    <path d="M39 39h22c-1 9-5 15-9 20 10 4 17 12 19 23H29c2-11 9-19 19-23-4-5-8-11-9-20Z"/>
-    <path d="M25 82h50l6 10H19l6-10Z"/>
-  </symbol>
-  <symbol id="piece-r" viewBox="0 0 100 100">
-    <path d="M22 13h15v10h13V13h13v10h15V13h8v27H14V13h8Z"/>
-    <path d="M23 40h54l-7 38H30l-7-38Z"/>
-    <path d="M25 78h50l7 14H18l7-14Z"/>
-    <path d="M31 48h38M29 76h42" fill="none"/>
-  </symbol>
-  <symbol id="piece-n" viewBox="0 0 100 100">
-    <path d="M28 78c2-17 8-29 20-38l-10-5 13-23 8 13c18 6 27 22 22 40-2 7-7 12-14 15H39L28 78Z"/>
-    <path d="M28 78h43l10 14H19l9-14Z"/>
-    <path d="M51 13 40 35M54 45c8 1 13 5 16 10" fill="none"/>
-    <circle cx="61" cy="35" r="3.3" stroke="none" fill="#ffffff" fill-opacity="0.72"/>
-  </symbol>
-  <symbol id="piece-b" viewBox="0 0 100 100">
-    <path d="M50 9c12 11 20 21 20 34 0 10-6 18-15 23h-10c-9-5-15-13-15-23 0-13 8-23 20-34Z"/>
-    <path d="M35 65h30l9 14H26l9-14Z"/>
-    <path d="M24 79h52l7 13H17l7-13Z"/>
-    <path d="m58 24-17 25" fill="none" stroke-width="6"/>
-  </symbol>
-  <symbol id="piece-q" viewBox="0 0 100 100">
-    <circle cx="18" cy="19" r="5"/><circle cx="38" cy="12" r="5"/><circle cx="62" cy="12" r="5"/><circle cx="82" cy="19" r="5"/>
-    <path d="m18 25 12 38h40l12-38-20 20-12-27-12 27-20-20Z"/>
-    <path d="M30 63h40l7 16H23l7-16Z"/>
-    <path d="M22 79h56l7 13H15l7-13Z"/>
-    <path d="M29 61h42" fill="none"/>
-  </symbol>
-  <symbol id="piece-k" viewBox="0 0 100 100">
-    <path d="M50 6v23M39 16h22" fill="none" stroke-width="7"/>
-    <path d="M37 31h26l8 15-12 18H41L29 46l8-15Z"/>
-    <path d="M34 63h32l9 16H25l9-16Z"/>
-    <path d="M23 79h54l8 13H15l8-13Z"/>
-    <path d="M34 61h32" fill="none"/>
-  </symbol>`;
-
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
+const PIECE_TYPES: readonly PieceSymbol[] = ["k", "q", "r", "b", "n", "p"];
+const PIECE_CODES: Record<PieceSymbol, string> = { k: "K", q: "Q", r: "R", b: "B", n: "N", p: "P" };
+const CHESSNUT_PIECES = new Map<string, string>();
+for (const color of ["w", "b"] as const) {
+  for (const type of PIECE_TYPES) {
+    const filename = `${color}${PIECE_CODES[type]}.svg`;
+    const assetPath = path.resolve(process.cwd(), "assets", "pieces", "chessnut", filename);
+    CHESSNUT_PIECES.set(`${color}${type}`, readFileSync(assetPath).toString("base64"));
+  }
+}
+
 const CANVAS_WIDTH = 1184;
 const CANVAS_HEIGHT = 1120;
 const BOARD_X = 80;
@@ -49,12 +23,10 @@ const SQUARE = 132;
 const BOARD_SIZE = SQUARE * 8;
 
 function pieceSvg(type: PieceSymbol, color: Color, x: number, y: number): string {
-  const fill = color === "w" ? "#f7f3e8" : "#202832";
-  const stroke = color === "w" ? "#46515c" : "#0d131a";
-  return `<g filter="url(#piece-shadow)">
-    <use href="#piece-${type}" x="${x + 10}" y="${y + 7}" width="${SQUARE - 20}" height="${SQUARE - 14}"
-      fill="${fill}" stroke="${stroke}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-  </g>`;
+  const asset = CHESSNUT_PIECES.get(`${color}${type}`);
+  if (!asset) return "";
+  return `<image href="data:image/svg+xml;base64,${asset}" x="${x + 4}" y="${y + 2}"
+    width="${SQUARE - 8}" height="${SQUARE - 5}" preserveAspectRatio="xMidYMid meet" filter="url(#piece-shadow)"/>`;
 }
 
 function escapeXml(value: string): string {
@@ -157,7 +129,6 @@ export async function renderBoard(
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" viewBox="0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}">
     <defs>
-      ${PIECE_SYMBOLS}
       <marker id="best-arrow" markerWidth="4.5" markerHeight="4.5" refX="3.5" refY="2.25" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#27d889"/></marker>
       <filter id="piece-shadow" x="-25%" y="-25%" width="150%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#071018" flood-opacity="0.42"/></filter>
       <filter id="board-shadow" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#05080b" flood-opacity="0.65"/></filter>
