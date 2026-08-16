@@ -1,7 +1,44 @@
 import { Chess, type Color, type PieceSymbol } from "chess.js";
 import sharp from "sharp";
 
-const PIECES: Record<PieceSymbol, string> = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+const PIECE_SYMBOLS = `
+  <symbol id="piece-p" viewBox="0 0 100 100">
+    <circle cx="50" cy="23" r="13"/>
+    <path d="M39 39h22c-1 9-5 15-9 20 10 4 17 12 19 23H29c2-11 9-19 19-23-4-5-8-11-9-20Z"/>
+    <path d="M25 82h50l6 10H19l6-10Z"/>
+  </symbol>
+  <symbol id="piece-r" viewBox="0 0 100 100">
+    <path d="M22 13h15v10h13V13h13v10h15V13h8v27H14V13h8Z"/>
+    <path d="M23 40h54l-7 38H30l-7-38Z"/>
+    <path d="M25 78h50l7 14H18l7-14Z"/>
+    <path d="M31 48h38M29 76h42" fill="none"/>
+  </symbol>
+  <symbol id="piece-n" viewBox="0 0 100 100">
+    <path d="M28 78c2-17 8-29 20-38l-10-5 13-23 8 13c18 6 27 22 22 40-2 7-7 12-14 15H39L28 78Z"/>
+    <path d="M28 78h43l10 14H19l9-14Z"/>
+    <path d="M51 13 40 35M54 45c8 1 13 5 16 10" fill="none"/>
+    <circle cx="61" cy="35" r="3.3" stroke="none" fill="#ffffff" fill-opacity="0.72"/>
+  </symbol>
+  <symbol id="piece-b" viewBox="0 0 100 100">
+    <path d="M50 9c12 11 20 21 20 34 0 10-6 18-15 23h-10c-9-5-15-13-15-23 0-13 8-23 20-34Z"/>
+    <path d="M35 65h30l9 14H26l9-14Z"/>
+    <path d="M24 79h52l7 13H17l7-13Z"/>
+    <path d="m58 24-17 25" fill="none" stroke-width="6"/>
+  </symbol>
+  <symbol id="piece-q" viewBox="0 0 100 100">
+    <circle cx="18" cy="19" r="5"/><circle cx="38" cy="12" r="5"/><circle cx="62" cy="12" r="5"/><circle cx="82" cy="19" r="5"/>
+    <path d="m18 25 12 38h40l12-38-20 20-12-27-12 27-20-20Z"/>
+    <path d="M30 63h40l7 16H23l7-16Z"/>
+    <path d="M22 79h56l7 13H15l7-13Z"/>
+    <path d="M29 61h42" fill="none"/>
+  </symbol>
+  <symbol id="piece-k" viewBox="0 0 100 100">
+    <path d="M50 6v23M39 16h22" fill="none" stroke-width="7"/>
+    <path d="M37 31h26l8 15-12 18H41L29 46l8-15Z"/>
+    <path d="M34 63h32l9 16H25l9-16Z"/>
+    <path d="M23 79h54l8 13H15l8-13Z"/>
+    <path d="M34 61h32" fill="none"/>
+  </symbol>`;
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
 const CANVAS_WIDTH = 1184;
@@ -10,6 +47,15 @@ const BOARD_X = 80;
 const BOARD_Y = 32;
 const SQUARE = 132;
 const BOARD_SIZE = SQUARE * 8;
+
+function pieceSvg(type: PieceSymbol, color: Color, x: number, y: number): string {
+  const fill = color === "w" ? "#f7f3e8" : "#202832";
+  const stroke = color === "w" ? "#46515c" : "#0d131a";
+  return `<g filter="url(#piece-shadow)">
+    <use href="#piece-${type}" x="${x + 10}" y="${y + 7}" width="${SQUARE - 20}" height="${SQUARE - 14}"
+      fill="${fill}" stroke="${stroke}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+  </g>`;
+}
 
 function escapeXml(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -57,31 +103,26 @@ export async function renderBoard(
       const y = BOARD_Y + displayRow * SQUARE;
       const name = squareName(boardRow, boardColumn);
       const light = (boardRow + boardColumn) % 2 === 0;
-      const fill = light ? "#e8ead8" : "#668876";
+      const fill = light ? "#eee8d8" : "#587466";
       squares.push(`<rect x="${x}" y="${y}" width="${SQUARE}" height="${SQUARE}" fill="${fill}"/>`);
       if (highlighted.has(name)) {
-        squares.push(`<rect x="${x + 6}" y="${y + 6}" width="${SQUARE - 12}" height="${SQUARE - 12}" rx="13" fill="#f4c542" fill-opacity="0.62" stroke="#ffe382" stroke-width="4" stroke-opacity="0.85"/>`);
+        squares.push(`<rect x="${x}" y="${y}" width="${SQUARE}" height="${SQUARE}" fill="#f4bd3f" fill-opacity="0.62"/>
+          <rect x="${x + 7}" y="${y + 7}" width="${SQUARE - 14}" height="${SQUARE - 14}" rx="9" fill="none" stroke="#ffe49a" stroke-width="3" stroke-opacity="0.72"/>`);
       }
 
       const piece = position[boardRow]?.[boardColumn];
       if (piece) {
-        const glyph = PIECES[piece.type];
-        const color = piece.color === "w" ? "#f8fafb" : "#20262d";
-        const stroke = piece.color === "w" ? "#26313a" : "#e4e9ec";
-        const strokeWidth = piece.color === "w" ? 3.5 : 1.8;
-        pieces.push(
-          `<text x="${x + SQUARE / 2}" y="${y + 106}" text-anchor="middle" font-family="DejaVu Sans, Segoe UI Symbol, serif" font-size="114" font-weight="700" fill="${color}" stroke="${stroke}" stroke-width="${strokeWidth}" paint-order="stroke" filter="url(#piece-shadow)">${glyph}</text>`
-        );
+        pieces.push(pieceSvg(piece.type, piece.color, x, y));
       }
 
-      const coordinateColor = light ? "#668876" : "#e8ead8";
+      const coordinateColor = light ? "#587466" : "#eee8d8";
       if (displayColumn === 0) {
         const rank = orientation === "w" ? 8 - displayRow : displayRow + 1;
-        labels.push(`<text x="${x + 10}" y="${y + 27}" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="${coordinateColor}">${rank}</text>`);
+        labels.push(`<text x="${x + 10}" y="${y + 25}" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="${coordinateColor}" fill-opacity="0.92">${rank}</text>`);
       }
       if (displayRow === 7) {
         const fileIndex = orientation === "w" ? displayColumn : 7 - displayColumn;
-        labels.push(`<text x="${x + SQUARE - 12}" y="${y + SQUARE - 10}" text-anchor="end" font-family="Arial, sans-serif" font-size="22" font-weight="800" fill="${coordinateColor}">${FILES[fileIndex]}</text>`);
+        labels.push(`<text x="${x + SQUARE - 11}" y="${y + SQUARE - 10}" text-anchor="end" font-family="Arial, sans-serif" font-size="20" font-weight="800" fill="${coordinateColor}" fill-opacity="0.92">${FILES[fileIndex]}</text>`);
       }
     }
   }
@@ -97,8 +138,8 @@ export async function renderBoard(
     const startY = from.y + unitY * 32;
     const endX = to.x - unitX * 46;
     const endY = to.y - unitY * 46;
-    bestArrow = `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="#16251f" stroke-width="28" stroke-opacity="0.48" stroke-linecap="round"/>
-      <line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="#28d17c" stroke-width="16" stroke-opacity="0.94" stroke-linecap="round" marker-end="url(#best-arrow)"/>`;
+    bestArrow = `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="#07120e" stroke-width="30" stroke-opacity="0.5" stroke-linecap="round"/>
+      <line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="#27d889" stroke-width="17" stroke-opacity="0.96" stroke-linecap="round" marker-end="url(#best-arrow)"/>`;
   }
 
   let evaluationBar = "";
@@ -108,20 +149,23 @@ export async function renderBoard(
     const whiteHeight = Math.max(12, Math.min(BOARD_SIZE - 12, BOARD_SIZE * whiteShare));
     const whiteY = orientation === "w" ? BOARD_Y + BOARD_SIZE - whiteHeight : BOARD_Y;
     const splitY = orientation === "w" ? whiteY : whiteY + whiteHeight;
-    evaluationBar = `<rect x="22" y="${BOARD_Y}" width="34" height="${BOARD_SIZE}" rx="12" fill="#171b20"/>
-      <rect x="22" y="${whiteY}" width="34" height="${whiteHeight}" rx="12" fill="#f1f3f4"/>
-      <line x1="18" y1="${splitY}" x2="60" y2="${splitY}" stroke="#6ee7a0" stroke-width="7" stroke-linecap="round"/>
-      <rect x="22" y="${BOARD_Y}" width="34" height="${BOARD_SIZE}" rx="12" fill="none" stroke="#59616b" stroke-width="3"/>`;
+    evaluationBar = `<rect x="19" y="${BOARD_Y - 2}" width="39" height="${BOARD_SIZE + 4}" rx="15" fill="#151b22" filter="url(#bar-shadow)"/>
+      <rect x="23" y="${whiteY}" width="31" height="${whiteHeight}" rx="11" fill="#f4f0e6"/>
+      <line x1="17" y1="${splitY}" x2="60" y2="${splitY}" stroke="#28d889" stroke-width="8" stroke-linecap="round"/>
+      <rect x="19" y="${BOARD_Y - 2}" width="39" height="${BOARD_SIZE + 4}" rx="15" fill="none" stroke="#64707c" stroke-width="3"/>`;
   }
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" viewBox="0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}">
     <defs>
-      <marker id="best-arrow" markerWidth="4" markerHeight="4" refX="3" refY="2" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L4,2 L0,4 Z" fill="#28d17c"/></marker>
-      <filter id="piece-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="3" flood-color="#101419" flood-opacity="0.38"/></filter>
+      ${PIECE_SYMBOLS}
+      <marker id="best-arrow" markerWidth="4.5" markerHeight="4.5" refX="3.5" refY="2.25" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L4.5,2.25 L0,4.5 Z" fill="#27d889"/></marker>
+      <filter id="piece-shadow" x="-25%" y="-25%" width="150%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#071018" flood-opacity="0.42"/></filter>
+      <filter id="board-shadow" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#05080b" flood-opacity="0.65"/></filter>
+      <filter id="bar-shadow" x="-50%" y="-10%" width="200%" height="120%"><feDropShadow dx="0" dy="5" stdDeviation="5" flood-color="#05080b" flood-opacity="0.6"/></filter>
     </defs>
-    <rect width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" rx="28" fill="#14181d"/>
-    <rect x="${BOARD_X - 7}" y="${BOARD_Y - 7}" width="${BOARD_SIZE + 14}" height="${BOARD_SIZE + 14}" rx="18" fill="#252b32"/>
-    ${squares.join("")}
+    <rect width="${CANVAS_WIDTH}" height="${CANVAS_HEIGHT}" rx="28" fill="#10151b"/>
+    <rect x="${BOARD_X - 10}" y="${BOARD_Y - 10}" width="${BOARD_SIZE + 20}" height="${BOARD_SIZE + 20}" rx="20" fill="#242d36" filter="url(#board-shadow)"/>
+    <g clip-path="inset(0 round 10px)">${squares.join("")}</g>
     ${bestArrow}
     ${pieces.join("")}
     ${labels.join("")}
