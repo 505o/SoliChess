@@ -37,7 +37,13 @@ export class StockfishEngine {
     if (!this.enginePromise) {
       const nativeFetch = globalThis.fetch;
       try {
-        this.enginePromise = initializeStockfish("lite-single");
+        this.enginePromise = initializeStockfish("lite-single").then((engine) => {
+          // The lite single-thread build is enough for Discord reviews. A tiny
+          // transposition table avoids spending scarce hosting RAM on cache.
+          engine.sendCommand("setoption name Threads value 1");
+          engine.sendCommand("setoption name Hash value 1");
+          return engine;
+        });
       } finally {
         // The Stockfish Node bundle sets the process-wide fetch global to null.
         // Restore Node's native implementation so Chess.com and Lichess keep working.

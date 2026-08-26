@@ -3,6 +3,11 @@ import path from "node:path";
 import { Chess, type Color, type PieceSymbol } from "chess.js";
 import sharp from "sharp";
 
+// Discord only needs one board at a time. Disabling libvips' global cache and
+// using one worker keeps image rendering comfortably inside small bot plans.
+sharp.cache({ memory: 0, files: 0, items: 0 });
+sharp.concurrency(1);
+
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
 const PIECE_TYPES: readonly PieceSymbol[] = ["k", "q", "r", "b", "n", "p"];
 const PIECE_CODES: Record<PieceSymbol, string> = { k: "K", q: "Q", r: "R", b: "B", n: "N", p: "P" };
