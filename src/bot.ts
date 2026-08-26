@@ -1110,6 +1110,21 @@ export class ChessGateBot {
     )];
   }
 
+  private warmReviewBoards(session: ReviewSession, direction: -1 | 1): void {
+    const indexes = [session.index + direction, session.index - direction];
+    for (const index of indexes) {
+      const move = session.result.moves[index];
+      if (!move) continue;
+      void renderBoard(
+        move.fenAfter,
+        session.result.color,
+        move.playedUci,
+        move.bestUci ?? undefined,
+        move.whiteEvaluation
+      ).catch((error: unknown) => console.error("Review board warmup failed", error));
+    }
+  }
+
   private async gameAnalysisPayload(id: string, session: ReviewSession) {
     const { result, index } = session;
     const move = result.moves[index]!;
@@ -1196,6 +1211,7 @@ export class ChessGateBot {
       ...await this.gameAnalysisPayload(match[2]!, session),
       attachments: []
     });
+    this.warmReviewBoards(session, match[1] === "next" || match[1] === "first" ? 1 : -1);
   }
 
   private async handleAnalyze(interaction: ChatInputCommandInteraction): Promise<void> {
@@ -1217,6 +1233,7 @@ export class ChessGateBot {
       const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
       const review = this.createReviewSession(interaction.guildId!, result, null);
       await interaction.editReply(await this.gameAnalysisPayload(review.id, review.session));
+      this.warmReviewBoards(review.session, -1);
       this.db.audit(interaction.guildId!, interaction.user.id, "game_analyzed", { gameUrl: result.gameUrl, depth: result.engineDepth });
     } catch (error) {
       console.error("Game analysis failed", error);
@@ -1423,6 +1440,7 @@ export class ChessGateBot {
           const result = await analyzeCompletedGame(game, link.chessUsername, this.engine, this.config.engineDepth);
           const review = this.createReviewSession(link.guildId, result, `♟️ مراجعة تلقائية لمباراة <@${link.discordUserId}> الجديدة`);
           await channel.send(await this.gameAnalysisPayload(review.id, review.session));
+          this.warmReviewBoards(review.session, -1);
           this.db.updateLastAnalyzedGame(link.guildId, link.discordUserId, game.url);
           this.db.audit(link.guildId, link.discordUserId, "automatic_game_analysis", { gameUrl: game.url, depth: result.engineDepth });
         } catch (error) {
