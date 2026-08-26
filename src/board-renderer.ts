@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createCanvas, loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
+import { clearAllCache, createCanvas, loadImage, type Image, type SKRSContext2D } from "@napi-rs/canvas";
 import { Chess, type Color, type PieceSymbol } from "chess.js";
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
@@ -16,16 +18,18 @@ for (const color of ["w", "b"] as const) {
 
 const CANVAS_WIDTH = 1184;
 const CANVAS_HEIGHT = 1120;
+const OUTPUT_SCALE = 0.68;
+const OUTPUT_WIDTH = Math.round(CANVAS_WIDTH * OUTPUT_SCALE);
+const OUTPUT_HEIGHT = Math.round(CANVAS_HEIGHT * OUTPUT_SCALE);
 const BOARD_X = 80;
 const BOARD_Y = 32;
 const SQUARE = 132;
 const BOARD_SIZE = SQUARE * 8;
-const MAX_CACHE_BYTES = 16 * 1024 * 1024;
-const MAX_CACHE_ENTRIES = 64;
-const boardCache = new Map<string, Buffer>();
+const BOARD_CACHE_DIRECTORY = path.resolve(process.cwd(), "data", "board-cache");
+const MAX_CACHE_FILES = 256;
 const pendingRenders = new Map<string, Promise<Buffer>>();
-let boardCacheBytes = 0;
 let renderQueue: Promise<void> = Promise.resolve();
+let writesSinceCleanup = 0;
 
 function fillRoundedRect(context: SKRSContext2D, x: number, y: number, width: number, height: number, radius: number, color: string): void {
   context.beginPath();
@@ -145,29 +149,44 @@ function drawEvaluationBar(context: SKRSContext2D, orientation: Color, whiteEval
 }
 
 function boardKey(fen: string, orientation: Color, highlightedMove?: string, bestMove?: string, whiteEvaluation?: number): string {
-  return `${fen}\u0000${orientation}\u0000${highlightedMove ?? ""}\u0000${bestMove ?? ""}\u0000${whiteEvaluation ?? ""}`;
+  const input = `canvas-v2\u0000${fen}\u0000${orientation}\u0000${highlightedMove ?? ""}\u0000${bestMove ?? ""}\u0000${whiteEvaluation ?? ""}`;
+  return createHash("sha256").update(input).digest("hex");
 }
 
-function cachedBoard(key: string): Buffer | null {
-  const value = boardCache.get(key);
-  if (!value) return null;
-  boardCache.delete(key);
-  boardCache.set(key, value);
-  return value;
+function cachePath(key: string): string {
+  return path.join(BOARD_CACHE_DIRECTORY, `${key}.png`);
 }
 
-function storeBoard(key: string, value: Buffer): void {
-  const existing = boardCache.get(key);
-  if (existing) boardCacheBytes -= existing.byteLength;
-  boardCache.delete(key);
-  boardCache.set(key, value);
-  boardCacheBytes += value.byteLength;
-  while (boardCache.size > MAX_CACHE_ENTRIES || boardCacheBytes > MAX_CACHE_BYTES) {
-    const oldestKey = boardCache.keys().next().value as string | undefined;
-    if (!oldestKey) break;
-    const removed = boardCache.get(oldestKey);
-    boardCache.delete(oldestKey);
-    boardCacheBytes -= removed?.byteLength ?? 0;
+async function readCachedBoard(key: string): Promise<Buffer | null> {
+  try {
+    return await readFile(cachePath(key));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function cleanupDiskCache(): Promise<void> {
+  const entries = await readdir(BOARD_CACHE_DIRECTORY, { withFileTypes: true }).catch(() => []);
+  const files = entries.filter((entry) => entry.isFile() && /^[a-f0-9]{64}\.png$/.test(entry.name));
+  if (files.length <= MAX_CACHE_FILES) return;
+  const dated = await Promise.all(files.map(async (entry) => ({
+    name: entry.name,
+    modifiedAt: (await stat(path.join(BOARD_CACHE_DIRECTORY, entry.name))).mtimeMs
+  })));
+  dated.sort((first, second) => first.modifiedAt - second.modifiedAt);
+  for (const entry of dated.slice(0, dated.length - MAX_CACHE_FILES)) {
+    await unlink(path.join(BOARD_CACHE_DIRECTORY, entry.name)).catch(() => undefined);
+  }
+}
+
+async function storeCachedBoard(key: string, value: Buffer): Promise<void> {
+  await mkdir(BOARD_CACHE_DIRECTORY, { recursive: true });
+  await writeFile(cachePath(key), value);
+  writesSinceCleanup += 1;
+  if (writesSinceCleanup >= 25) {
+    writesSinceCleanup = 0;
+    await cleanupDiskCache();
   }
 }
 
@@ -186,8 +205,9 @@ async function renderBoardUncached(
     highlighted.add(highlightedMove.slice(2, 4));
   }
 
-  const canvas = createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+  const canvas = createCanvas(OUTPUT_WIDTH, OUTPUT_HEIGHT);
   const context = canvas.getContext("2d");
+  context.scale(OUTPUT_SCALE, OUTPUT_SCALE);
   context.imageSmoothingEnabled = true;
   context.imageSmoothingQuality = "high";
   fillRoundedRect(context, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT, 28, "#10151b");
@@ -271,6 +291,7 @@ async function renderBoardUncached(
   } finally {
     canvas.width = 1;
     canvas.height = 1;
+    clearAllCache();
   }
 }
 
@@ -282,20 +303,19 @@ export function renderBoard(
   whiteEvaluation?: number
 ): Promise<Buffer> {
   const key = boardKey(fen, orientation, highlightedMove, bestMove, whiteEvaluation);
-  const cached = cachedBoard(key);
-  if (cached) return Promise.resolve(cached);
   const pending = pendingRenders.get(key);
   if (pending) return pending;
 
-  const job = renderQueue
-    .then(() => renderBoardUncached(fen, orientation, highlightedMove, bestMove, whiteEvaluation))
-    .then((buffer) => {
-      storeBoard(key, buffer);
-      return buffer;
-    })
-    .finally(() => pendingRenders.delete(key));
+  const job = (async () => {
+    const cached = await readCachedBoard(key);
+    if (cached) return cached;
+    const render = renderQueue.then(() => renderBoardUncached(fen, orientation, highlightedMove, bestMove, whiteEvaluation));
+    renderQueue = render.then(() => undefined, () => undefined);
+    const buffer = await render;
+    await storeCachedBoard(key, buffer);
+    return buffer;
+  })().finally(() => pendingRenders.delete(key));
   pendingRenders.set(key, job);
-  renderQueue = job.then(() => undefined, () => undefined);
   return job;
 }
 

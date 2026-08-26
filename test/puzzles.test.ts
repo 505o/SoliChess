@@ -58,7 +58,7 @@ test("board renderer produces a PNG", async () => {
   assert.equal(board.subarray(1, 4).toString(), "PNG");
   assert.ok(board.length > 10_000);
   const image = await loadImage(board);
-  assert.equal(image.width, 1184);
-  assert.equal(image.height, 1120);
-  assert.equal(await renderBoard(puzzle.fen, "b", puzzle.lastMove), board, "identical boards should use the bounded PNG cache");
+  assert.equal(image.width, 805);
+  assert.equal(image.height, 762);
+  assert.deepEqual(await renderBoard(puzzle.fen, "b", puzzle.lastMove), board, "identical boards should use the bounded disk cache");
 });
