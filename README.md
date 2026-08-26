@@ -32,7 +32,7 @@ The previous local SQLite database is used only as a retained migration backup a
 
 ## Account connection
 
-SoliChess currently includes a temporary profile-based ownership challenge for development. The intended production flow uses Chess.com OAuth so members can confirm account ownership without sharing passwords or relying on editable profile information.
+SoliChess includes a profile-based ownership challenge as a fallback. The production flow is prepared for Chess.com OAuth: Discord creates a short-lived state, a dedicated Cloudflare Worker handles the public callback, and the bot applies roles only after the authenticated Chess.com identity is matched against public profile data. OAuth access tokens are not stored.
 
 The bot never requests or stores Chess.com or Discord passwords. A connected Chess.com account cannot be switched automatically by the member; exceptional corrections are handled by server administrators and recorded for security purposes.
 
@@ -42,7 +42,7 @@ SoliChess does not provide assistance during active games. Game review only acce
 
 ## Project status
 
-The bot is under active private development. Chess.com OAuth integration is pending application approval and official client details.
+The bot is under active private development. The OAuth implementation is ready for the official client details and endpoint values that Chess.com provides after approval.
 
 ## Privacy
 

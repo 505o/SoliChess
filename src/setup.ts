@@ -140,7 +140,7 @@ export async function setupGuild(
         .setColor(0x57f287)
         .setTitle("اربط حسابك وافتح السيرفر")
         .setDescription(
-          "اضغط الزر، اكتب اسم حساب Chess.com، ثم اتبع خطوات إثبات الملكية. بعد نجاح التحقق ستحصل تلقائيًا على رولات Rapid وBlitz وBullet."
+          "اضغط الزر واتبع خطوات تأكيد الحساب. بعد نجاح الربط ستحصل تلقائيًا على رولات Rapid وBlitz وBullet."
         )
         .setFooter({ text: "لن يطلب منك البوت كلمة المرور أبدًا" })
     ],

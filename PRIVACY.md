@@ -1,6 +1,6 @@
 # SoliChess Privacy Policy
 
-**Effective date:** August 15, 2026
+**Effective date:** August 26, 2026
 
 SoliChess is a Discord bot that connects a Discord member to their Chess.com account, assigns chess-related server roles, and helps server administrators manage account verification. This policy explains what data the bot processes and how it is used.
 
@@ -15,7 +15,7 @@ SoliChess may process and store:
 - Puzzle progress, puzzle rating, solved and failed counts, streak statistics, and per-round mistake counts for shared puzzle challenges.
 - Public completed-game data requested for post-game analysis, including the game URL and engine-derived review results.
 - Administrative audit records, such as account linking, account-status changes, restoration, or unlinking actions.
-- OAuth authorization data if Chess.com OAuth is enabled. OAuth tokens will only be used to authenticate the connected account and access approved Chess.com data.
+- OAuth authorization data if Chess.com OAuth is enabled. Authorization codes and access tokens are processed only to identify the approved Chess.com account and are not retained. The resulting public account identity may be held temporarily by the callback service for up to 30 minutes and is deleted when consumed by the bot.
 
 SoliChess does not request or store Chess.com passwords, Discord passwords, payment information, private messages, game chat, or other private Chess.com content.
 
@@ -36,11 +36,11 @@ The bot does not use Chess.com data to provide assistance during an active game.
 
 ## Sharing and Sale of Data
 
-We do not sell personal information or use it for advertising. Information is only shared when necessary to operate the bot, including with Discord, Chess.com, Neon as the private database infrastructure provider, or when required by law. Discord server administrators may view verification status, public Chess.com information, puzzle statistics, and relevant moderation records for members of their server. Database access is restricted to the project owner and the bot service.
+We do not sell personal information or use it for advertising. Information is only shared when necessary to operate the bot, including with Discord, Chess.com, Neon as the private database infrastructure provider, Cloudflare as the OAuth callback infrastructure provider, or when required by law. Discord server administrators may view verification status, public Chess.com information, puzzle statistics, and relevant moderation records for members of their server. Database access is restricted to the project owner and the bot service.
 
 ## Data Retention
 
-Account-linking data is retained while needed to provide the service and enforce the one-account-per-member rule. Minimal identifiers may be retained after an administrative unlink to prevent abuse, resolve disputes, and maintain server security, unless deletion is required by applicable law. Temporary verification challenges expire automatically. Interactive game-review sessions expire after seven days. Completed shared-puzzle rounds and their attempt counters expire after 30 days. Administrative audit records are normally retained for up to 90 days and capped to limit database storage.
+Account-linking data is retained while needed to provide the service and enforce the one-account-per-member rule. Minimal identifiers may be retained after an administrative unlink to prevent abuse, resolve disputes, and maintain server security, unless deletion is required by applicable law. Temporary verification challenges expire automatically. Temporary OAuth callback results expire within 30 minutes and are deleted earlier when consumed. Interactive game-review sessions expire after seven days. Completed shared-puzzle rounds and their attempt counters expire after 30 days. Administrative audit records are normally retained for up to 90 days and capped to limit database storage.
 
 ## Data Requests and Account Disconnection
 
@@ -63,6 +63,7 @@ Use of SoliChess also involves third-party services and is subject to their poli
 - [Chess.com Privacy Policy](https://www.chess.com/legal/privacy)
 - [Discord Privacy Policy](https://discord.com/privacy)
 - [Neon Privacy Policy](https://neon.com/privacy-policy)
+- [Cloudflare Privacy Policy](https://www.cloudflare.com/privacypolicy/)
 
 ## Changes to This Policy
 

@@ -42,6 +42,7 @@ import {
 import { applyChessRoles, isManagedRatingRole, quarantineMember } from "./rating-roles.js";
 import { setupAnalysisChannel, setupGuild } from "./setup.js";
 import { StockfishEngine } from "./stockfish.js";
+import { buildChessComAuthorizeUrl, OAuthBridgeClient, OAuthBridgeError } from "./oauth.js";
 import type {
   ChessComProfile,
   ChessComStats,
@@ -56,6 +57,7 @@ import type {
 
 const LINK_MODAL_ID = "chess_link_modal";
 const CHECK_BUTTON_ID = "chess_link_check";
+const OAUTH_CHECK_BUTTON_ID = "chess_oauth_check";
 const PUZZLE_MOVE_PREFIX = "puzzle_move:";
 const PUZZLE_MODAL_PREFIX = "puzzle_move_modal:";
 const REVIEW_BUTTON_PREFIX = "review_";
@@ -115,6 +117,7 @@ export class ChessGateBot {
   private readonly chess: ChessComClient;
   private readonly puzzles: LichessPuzzleClient;
   private readonly engine = new StockfishEngine();
+  private readonly oauthBridge: OAuthBridgeClient | null;
   private readonly analysesInProgress = new Set<string>();
   private readonly lastAnalysisAt = new Map<string, number>();
   private readonly reviewSessions = new Map<string, ReviewSession>();
@@ -128,6 +131,9 @@ export class ChessGateBot {
   ) {
     this.chess = new ChessComClient(config.chessComUserAgent);
     this.puzzles = new LichessPuzzleClient(config.chessComUserAgent);
+    this.oauthBridge = config.chessComOAuth
+      ? new OAuthBridgeClient(config.chessComOAuth.bridgeUrl, config.chessComOAuth.bridgeSecret)
+      : null;
   }
 
   async start(): Promise<void> {
@@ -176,6 +182,7 @@ export class ChessGateBot {
     if (interaction.isButton()) {
       if (interaction.customId === "chess_link_start") return void await this.openLinkModal(interaction);
       if (interaction.customId === CHECK_BUTTON_ID) return void await this.checkChallenge(interaction);
+      if (interaction.customId === OAUTH_CHECK_BUTTON_ID) return void await this.checkOAuthLink(interaction);
       if (interaction.customId.startsWith(DAILY_PUZZLE_OPEN_PREFIX) || interaction.customId.startsWith(DAILY_PUZZLE_ANSWER_PREFIX)) {
         return void await this.handleDailyPuzzleButton(interaction);
       }
@@ -218,6 +225,10 @@ export class ChessGateBot {
       });
     }
 
+    if (this.config.chessComOAuth && this.oauthBridge) {
+      return void await this.beginOAuthLink(interaction);
+    }
+
     const username = new TextInputBuilder()
       .setCustomId("chess_username")
       .setLabel("اسم حساب Chess.com")
@@ -233,6 +244,55 @@ export class ChessGateBot {
         .setTitle("ربط حساب Chess.com")
         .addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(username))
     );
+  }
+
+  private async beginOAuthLink(interaction: ButtonInteraction): Promise<void> {
+    const oauth = this.config.chessComOAuth;
+    if (!oauth || !this.oauthBridge) return void await replyError(interaction, "ربط OAuth غير مفعّل بعد.");
+
+    const state = randomBytes(32).toString("base64url");
+    const now = Date.now();
+    this.db.savePending({
+      guildId: interaction.guildId!,
+      discordUserId: interaction.user.id,
+      chessUsername: "",
+      chessPlayerId: 0,
+      challengeCode: `oauth:${state}`,
+      createdAt: now,
+      expiresAt: now + this.config.verificationTtlMinutes * 60_000
+    });
+    this.db.audit(interaction.guildId!, interaction.user.id, "oauth_link_started", {});
+
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0x57f287)
+          .setTitle("تأكيد حسابك عبر Chess.com")
+          .setDescription(
+            [
+              "1. اضغط «الاتصال بـ Chess.com» وسجّل الدخول في الصفحة الرسمية.",
+              "2. وافق على مشاركة هوية الحساب العامة مع SoliChess.",
+              "3. ارجع إلى Discord واضغط «إكمال الربط».",
+              "",
+              "لن يرى البوت كلمة مرورك، ولا تُحفظ رموز الدخول في قاعدة البيانات."
+            ].join("\n")
+          )
+          .setFooter({ text: `ينتهي طلب الربط خلال ${this.config.verificationTtlMinutes} دقيقة` })
+      ],
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel("الاتصال بـ Chess.com")
+            .setStyle(ButtonStyle.Link)
+            .setURL(buildChessComAuthorizeUrl(oauth, state)),
+          new ButtonBuilder()
+            .setCustomId(OAUTH_CHECK_BUTTON_ID)
+            .setLabel("إكمال الربط")
+            .setStyle(ButtonStyle.Primary)
+        )
+      ],
+      flags: MessageFlags.Ephemeral
+    });
   }
 
   private async beginLink(interaction: ModalSubmitInteraction): Promise<void> {
@@ -300,6 +360,9 @@ export class ChessGateBot {
     const guildId = interaction.guildId!;
     const pending = this.db.getPending(guildId, interaction.user.id);
     if (!pending) return void await interaction.editReply("لا يوجد طلب تحقق نشط. ابدأ الربط من جديد.");
+    if (pending.challengeCode.startsWith("oauth:")) {
+      return void await interaction.editReply("هذا طلب OAuth. استخدم زر «إكمال الربط» الموجود في رسالة الربط الخاصة بك.");
+    }
     if (pending.expiresAt < Date.now()) {
       this.db.deletePending(guildId, interaction.user.id);
       return void await interaction.editReply("انتهت صلاحية رمز التحقق. ابدأ الربط من جديد.");
@@ -319,6 +382,51 @@ export class ChessGateBot {
       return void await interaction.editReply(`توقّف التحقق لأن الحساب أصبح: **${statusLabel(profile.status)}**.`);
     }
 
+    await this.completeVerifiedLink(interaction, profile, "profile_location_challenge");
+  }
+
+  private async checkOAuthLink(interaction: ButtonInteraction): Promise<void> {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    if (!this.oauthBridge) return void await interaction.editReply("ربط OAuth غير مفعّل بعد.");
+
+    const guildId = interaction.guildId!;
+    const pending = this.db.getPending(guildId, interaction.user.id);
+    if (!pending || !pending.challengeCode.startsWith("oauth:")) {
+      return void await interaction.editReply("لا يوجد طلب OAuth نشط. ابدأ الربط من جديد.");
+    }
+    if (pending.expiresAt < Date.now()) {
+      this.db.deletePending(guildId, interaction.user.id);
+      return void await interaction.editReply("انتهت صلاحية طلب الربط. ابدأ من جديد.");
+    }
+
+    const state = pending.challengeCode.slice("oauth:".length);
+    const identity = await this.oauthBridge.consumeIdentity(state);
+    if (!identity) {
+      return void await interaction.editReply("لم يصل تأكيد Chess.com حتى الآن. أكمل الموافقة في المتصفح ثم حاول مجددًا.");
+    }
+
+    const profile = await this.chess.getProfile(identity.username);
+    if (identity.playerId !== null && identity.playerId !== profile.player_id) {
+      this.db.audit(guildId, interaction.user.id, "oauth_player_id_mismatch", {
+        oauthPlayerId: identity.playerId,
+        publicPlayerId: profile.player_id
+      });
+      return void await interaction.editReply("تعذر مطابقة هوية Chess.com. ابدأ الربط من جديد أو تواصل مع الإدارة.");
+    }
+    if (isClosedStatus(profile.status)) {
+      return void await interaction.editReply(`لا يمكن ربط الحساب لأن حالته: **${statusLabel(profile.status)}**.`);
+    }
+
+    await this.completeVerifiedLink(interaction, profile, "chesscom_oauth");
+  }
+
+  private async completeVerifiedLink(
+    interaction: ButtonInteraction,
+    profile: ChessComProfile,
+    verifiedVia: "profile_location_challenge" | "chesscom_oauth"
+  ): Promise<void> {
+    const guildId = interaction.guildId!;
+
     const duplicate = this.db.getLinkByChessPlayer(guildId, profile.player_id);
     if (duplicate) return void await interaction.editReply("سبق ربط هذا الحساب بعضو آخر.");
 
@@ -329,7 +437,7 @@ export class ChessGateBot {
       chessPlayerId: profile.player_id,
       chessUsername: profile.username,
       linkedAt: Date.now(),
-      verifiedVia: "profile_location_challenge",
+      verifiedVia,
       accountStatus: profile.status,
       lastCheckedAt: Date.now(),
       lastStatsJson: compactStatsJson(stats),
@@ -362,7 +470,7 @@ export class ChessGateBot {
             { name: "Blitz", value: ratingText(ratings.blitz), inline: true },
             { name: "Bullet", value: ratingText(ratings.bullet), inline: true }
           )
-          .setFooter({ text: "يمكنك الآن إعادة خانة Location إلى قيمتها السابقة" })
+          .setFooter({ text: verifiedVia === "chesscom_oauth" ? "تم التحقق مباشرة عبر Chess.com" : "يمكنك الآن إعادة خانة Location إلى قيمتها السابقة" })
       ],
       components: []
     });
@@ -1370,5 +1478,6 @@ export class ChessGateBot {
 
 export function userFacingError(error: unknown): string {
   if (error instanceof ChessComApiError) return error.message;
+  if (error instanceof OAuthBridgeError) return error.message;
   return "حدث خطأ غير متوقع.";
 }
