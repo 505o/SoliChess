@@ -1,6 +1,5 @@
 import {
   ArrowLeft,
-  ArrowUpLeft,
   Bot,
   Check,
   ChevronLeft,
@@ -49,7 +48,7 @@ const features = [
 
 const ratings = [
   { name: 'Rapid', value: '1842', delta: '+38', tone: 'bg-[#7fd6a6]' },
-  { name: 'Blitz', value: '1729', delta: '+21', tone: 'bg-[#f4c965]' },
+  { name: 'Blitz', value: '1729', delta: '+21', tone: 'bg-[#a78bfa]' },
   { name: 'Bullet', value: '1658', delta: '+14', tone: 'bg-[#7da8f5]' },
 ];
 
@@ -72,8 +71,8 @@ export default function Home() {
           <a href="#review">المراجعة</a>
           <a href="#how">كيف يعمل؟</a>
         </div>
-        <Button nativeButton={false} render={<a href="#launch" aria-label="انتقل إلى قسم تجربة SoliChess" />} className="nav-cta h-10 rounded-full bg-[#d9f773] px-5 font-bold text-[#102015] hover:bg-[#e8ff9c]">
-          جرّب SoliChess <ArrowUpLeft className="size-4" />
+        <Button nativeButton={false} render={<a href="#launch" aria-label="انتقل إلى قسم تجربة SoliChess" />} className="nav-cta h-10 rounded-full bg-[#4fe1bc] px-5 font-extrabold !text-[#06251c] hover:bg-[#79edd0]">
+          جرّب SoliChess <ArrowLeft className="size-4" />
         </Button>
       </nav>
 
@@ -85,7 +84,7 @@ export default function Home() {
           <h1>العب. راجع.<br /><span>وتقدّم نقلة بنقلة.</span></h1>
           <p>SoliChess يحوّل سيرفرك إلى نادي شطرنج متكامل: مراجعة مباريات، ألغاز تنافسية، تصنيفات موثّقة، وتجربة مصممة للاعبين.</p>
           <div className="hero-actions">
-            <Button nativeButton={false} render={<a href="#launch" aria-label="انتقل إلى قسم إضافة البوت" />} className="h-13 rounded-full bg-[#d9f773] px-7 text-base font-extrabold text-[#112016] shadow-[0_0_30px_rgba(217,247,115,.18)] hover:bg-[#e9ff9e]">
+            <Button nativeButton={false} render={<a href="#launch" aria-label="انتقل إلى قسم إضافة البوت" />} className="primary-link h-13 rounded-full bg-[#4fe1bc] px-7 text-base font-extrabold !text-[#06251c] shadow-[0_0_30px_rgba(79,225,188,.2)] hover:bg-[#79edd0]">
               أضف البوت لسيرفرك <ArrowLeft className="size-5" />
             </Button>
             <Button nativeButton={false} render={<a href="#review" aria-label="شاهد نموذج مراجعة المباراة" />} variant="outline" className="h-13 rounded-full border-white/12 bg-white/5 px-7 text-base text-white hover:bg-white/10">شاهد المراجعة</Button>
@@ -100,8 +99,8 @@ export default function Home() {
           <div className="floating-pill pill-two"><Zap /> دقة 91%</div>
           <div className="board-shell">
             <div className="board-topline"><div><span className="status-dot" /> مراجعة مباشرة</div><span>18 / 42</span></div>
-            <div className="hero-board-wrap"><ChessBoard compact /><div className="eval-bar" aria-label="تقييم الوضعية +1.4"><span style={{ height: '63%' }} /><b>+1.4</b></div></div>
-            <div className="move-card"><span className="move-icon">★</span><div><small>أفضل نقلة</small><strong>Nxe5!</strong></div><div className="move-line">… Nxe5&nbsp;&nbsp; 19. dxe5&nbsp;&nbsp; Qxd1</div></div>
+            <div className="hero-board-wrap"><ChessBoard compact from="f1" to="b5" /><div className="eval-bar" aria-label="تقييم الوضعية +0.3"><span style={{ height: '54%' }} /><b>+0.3</b></div></div>
+            <div className="move-card"><span className="move-icon">★</span><div><small>نقلة نظرية قوية</small><strong>Bb5</strong></div><div className="move-line">Bb5&nbsp;&nbsp; a6&nbsp;&nbsp; Ba4&nbsp;&nbsp; Nf6</div></div>
           </div>
         </div>
 
