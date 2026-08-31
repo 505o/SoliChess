@@ -61,7 +61,7 @@ const steps = [
 
 export default function Home() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#09100d] text-[#f6f2e8]">
+    <main className="min-h-screen overflow-x-clip bg-[#09100d] text-[#f6f2e8]">
       <nav className="site-nav" aria-label="التنقل الرئيسي">
         <a href="#top" className="brand" aria-label="SoliChess - الرئيسية">
           <span className="brand-mark" aria-hidden="true">♞</span>
