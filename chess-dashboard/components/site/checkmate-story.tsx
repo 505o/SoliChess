@@ -47,52 +47,71 @@ export function CheckmateStory() {
     };
   }, []);
 
-  const moveProgress = smoothstep(clamp((progress - 0.12) / 0.58));
-  const resultProgress = smoothstep(clamp((progress - 0.58) / 0.22));
+  const moveProgress = smoothstep(clamp((progress - 0.08) / 0.36));
+  const knockProgress = smoothstep(clamp((progress - 0.46) / 0.22));
+  const fallProgress = smoothstep(clamp((progress - 0.7) / 0.2));
+  const resultProgress = smoothstep(clamp((progress - 0.38) / 0.16));
 
   return (
     <section ref={sectionRef} className="checkmate-story" aria-label="مشهد كش ملك تفاعلي">
       <div className="checkmate-sticky">
-        <div className="checkmate-media" aria-label="يد تضع الوزيرة على رقعة شطرنج ثلاثية الأبعاد ثم يسقط الملك الأسود">
+        <div className="checkmate-media" aria-label="يد تنفذ نقلة Qg7 كش ملك ثم تطيح الملك الأسود">
           <Image
-            className="story-frame story-frame-before"
-            src="/story/checkmate-before.webp"
-            alt="يد حقيقية تمسك وزيرة بيضاء فوق رقعة شطرنج ثلاثية الأبعاد"
+            className="story-frame"
+            src="/story/checkmate-legal-1.webp"
+            alt="يد تمسك الوزيرة البيضاء على g6 قبل النقلة القانونية"
             fill
             sizes="100vw"
             priority={false}
-            style={{ opacity: 1 - moveProgress, transform: `scale(${1 + moveProgress * 0.018}) translateY(${moveProgress * 5}px)` }}
+            style={{ opacity: 1 - moveProgress, transform: `scale(${1 + moveProgress * 0.012})` }}
           />
           <Image
-            className="story-frame story-frame-after"
-            src="/story/checkmate-after.webp"
-            alt="الوزيرة البيضاء على الرقعة والملك الأسود ساقط بعد كش ملك"
+            className="story-frame"
+            src="/story/checkmate-legal-2.webp"
+            alt="اليد تنقل الوزيرة من g6 إلى g7 لتنفيذ كش ملك"
             fill
             sizes="100vw"
             priority={false}
-            style={{ opacity: moveProgress, transform: `scale(${1.025 - moveProgress * 0.025})` }}
+            style={{ opacity: moveProgress * (1 - knockProgress), transform: `scale(${1.012 - moveProgress * 0.012})` }}
+          />
+          <Image
+            className="story-frame"
+            src="/story/checkmate-legal-3.webp"
+            alt="اليد نفسها تدفع الملك الأسود بعد تنفيذ Qg7 كش ملك"
+            fill
+            sizes="100vw"
+            priority={false}
+            style={{ opacity: knockProgress * (1 - fallProgress), transform: `scale(${1.01 - knockProgress * 0.01})` }}
+          />
+          <Image
+            className="story-frame"
+            src="/story/checkmate-legal-4.webp"
+            alt="الملك الأسود ساقط والوزيرة على g7 بعد كش ملك قانوني"
+            fill
+            sizes="100vw"
+            priority={false}
+            style={{ opacity: fallProgress, transform: `scale(${1.012 - fallProgress * 0.012})` }}
           />
           <div className="story-vignette" aria-hidden="true" />
           <div className="check-flash" style={{ opacity: resultProgress }} aria-hidden="true" />
         </div>
 
         <div className="checkmate-copy">
-          <span className="story-eyebrow">لحظة تغيّر المباراة</span>
-          <h2>حرّك النزول<br /><span>وشاهد كش الملك</span></h2>
-          <p>الوزيرة تنزل على الرقعة الحقيقية، تحسم الوضعية، ويسقط ملك الخصم قدامك</p>
+          <span className="story-eyebrow">حكمة على الرقعة</span>
+          <h2>حين تجد نقلة جيدة<br /><span>ابحث عن نقلة أفضل</span></h2>
+          <p>النهاية لا تُحسم بقوة القطعة، بل بدقة المربع الذي تختاره</p>
           <div className="story-steps" aria-label="شرح المشهد">
-            <div className={progress >= 0.12 ? 'active' : ''}><b>01</b><span><small>التنفيذ</small><strong>ضع الوزيرة</strong></span></div>
-            <div className={progress >= 0.48 ? 'active' : ''}><b>02</b><span><small>النقلة</small><strong>Qxh7#</strong></span></div>
-            <div className={progress >= 0.72 ? 'active' : ''}><b>03</b><span><small>النتيجة</small><strong>كش ملك</strong></span></div>
+            <div className={progress >= 0.08 ? 'active' : ''}><b>01</b><span><small>الوضعية</small><strong>Kf6 Qg6 Kh8</strong></span></div>
+            <div className={progress >= 0.4 ? 'active' : ''}><b>02</b><span><small>النقلة القانونية</small><strong>Qg7#</strong></span></div>
+            <div className={progress >= 0.72 ? 'active' : ''}><b>03</b><span><small>بعد الحسم</small><strong>يسقط الملك</strong></span></div>
           </div>
         </div>
 
         <div className="mate-result" style={{ opacity: resultProgress, transform: `translateY(${22 * (1 - resultProgress)}px) scale(${0.94 + resultProgress * 0.06})` }}>
-          <span>Qxh7#</span>
+          <span>Qg7#</span>
           <strong>كش ملك</strong>
         </div>
         <div className="story-progress" aria-hidden="true"><span style={{ transform: `scaleX(${progress})` }} /></div>
-        <span className="scroll-instruction" style={{ opacity: clamp(1 - progress * 3) }}>كمّل نزول</span>
       </div>
     </section>
   );
