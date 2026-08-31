@@ -1,5 +1,3 @@
-import Image from 'next/image';
-
 import {
   ArrowLeft,
   Bot,
@@ -123,7 +121,7 @@ export default function Home() {
                 <div className="feature-icon"><Icon /></div><span>{feature.label}</span><h3>{feature.title}</h3><p>{feature.text}</p>
                 <div className="feature-visual" aria-hidden="true">
                   {feature.accent === 'emerald' && <><div className="mini-move"><b>★</b><span><strong>Qd7!</strong><small>أفضل نقلة</small></span><em>+2.1</em></div><div className="mini-move muted"><b>!</b><span><strong>c6</strong><small>نقلة جيدة</small></span><em>+0.7</em></div></>}
-                  {feature.accent === 'gold' && <div className="puzzle-preview"><Image src="/pieces/bQ.svg" alt="" width={96} height={96} unoptimized /><i>الحل سري</i><b>3 / 5</b></div>}
+                  {feature.accent === 'gold' && <div className="puzzle-preview"><div className="puzzle-board"><ChessBoard fen="6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1" from="d1" to="d8" showArrow={false} /></div><div className="puzzle-meta"><span>الأبيض يلعب</span><strong>مات في نقلة</strong><i>الحل سري</i></div><b>5 / 3</b></div>}
                   {feature.accent === 'blue' && ratings.map((rating) => <div className="rating-row" key={rating.name}><i className={rating.tone} /><span>{rating.name}</span><strong>{rating.value}</strong><em>{rating.delta}</em></div>)}
                 </div>
               </article>

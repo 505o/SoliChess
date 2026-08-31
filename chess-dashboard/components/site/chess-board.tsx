@@ -30,9 +30,10 @@ type ChessBoardProps = {
   fen?: string;
   from?: string;
   to?: string;
+  showArrow?: boolean;
 };
 
-export function ChessBoard({ compact = false, fen = DEFAULT_FEN, from = 'f1', to = 'b5' }: ChessBoardProps) {
+export function ChessBoard({ compact = false, fen = DEFAULT_FEN, from = 'f1', to = 'b5', showArrow = true }: ChessBoardProps) {
   const pieces = parseFen(fen);
   const start = squareCenter(from);
   const end = squareCenter(to);
@@ -48,7 +49,7 @@ export function ChessBoard({ compact = false, fen = DEFAULT_FEN, from = 'f1', to
         return (
           <span
             key={square}
-            className={`${isLight ? 'light-square' : 'dark-square'} ${square === from ? 'from-square' : ''} ${square === to ? 'to-square' : ''}`}
+            className={`${isLight ? 'light-square' : 'dark-square'} ${showArrow && square === from ? 'from-square' : ''} ${showArrow && square === to ? 'to-square' : ''}`}
           >
             {piece && <Image src={pieceAsset(piece)} alt={pieceNames[piece]} width={128} height={128} draggable={false} unoptimized />}
             {columnIndex === 0 && <small className="rank-label">{8 - rowIndex}</small>}
@@ -56,7 +57,7 @@ export function ChessBoard({ compact = false, fen = DEFAULT_FEN, from = 'f1', to
           </span>
         );
       })}
-      <svg className="board-arrow" viewBox="0 0 100 100" aria-hidden="true">
+      {showArrow && <svg className="board-arrow" viewBox="0 0 100 100" aria-hidden="true">
         <defs>
           <marker id={markerId} viewBox="0 0 10 10" markerWidth="3.5" markerHeight="3.5" refX="8.5" refY="5" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#4fe1bc" />
@@ -72,7 +73,7 @@ export function ChessBoard({ compact = false, fen = DEFAULT_FEN, from = 'f1', to
           strokeLinecap="round"
           markerEnd={`url(#${markerId})`}
         />
-      </svg>
+      </svg>}
     </figure>
   );
 }
