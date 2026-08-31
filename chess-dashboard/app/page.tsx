@@ -20,6 +20,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChessBoard } from '@/components/site/chess-board';
+import { CheckmateStory } from '@/components/site/checkmate-story';
 import { ReviewDemo } from '@/components/site/review-demo';
 
 const features = [
@@ -129,6 +130,8 @@ export default function Home() {
           })}
         </div>
       </section>
+
+      <CheckmateStory />
 
       <section id="review" className="review-section">
         <div className="section-wrap review-layout">
