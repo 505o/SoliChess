@@ -3,11 +3,11 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'SoliChess — نادي الشطرنج داخل ديسكورد',
-  description: 'مراجعة مباريات، ألغاز تنافسية، تصنيفات موثقة، وكل ما يحتاجه مجتمع الشطرنج داخل ديسكورد.',
+  description: 'مراجعة مباريات، ألغاز تنافسية، تصنيفات موثقة، وكل ما يحتاجه مجتمع الشطرنج داخل ديسكورد',
   icons: { icon: '/favicon.svg' },
   openGraph: {
     title: 'SoliChess — العب، راجع، وتقدّم',
-    description: 'رفيق الشطرنج العربي داخل ديسكورد.',
+    description: 'رفيق الشطرنج العربي داخل ديسكورد',
     type: 'website',
   },
 };

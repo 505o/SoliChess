@@ -27,21 +27,21 @@ const features = [
     icon: ScanSearch,
     label: 'مراجعة ذكية',
     title: 'كل نقلة تصير مفهومة',
-    text: 'شاهد أفضل نقلة، الأخطاء، الفرص الضائعة، ودقة لعبك في مراجعة واضحة داخل ديسكورد.',
+    text: 'شاهد أفضل نقلة، الأخطاء، الفرص الضائعة، ودقة لعبك في مراجعة واضحة داخل ديسكورد',
     accent: 'emerald',
   },
   {
     icon: Puzzle,
     label: 'ألغاز خاصة ويومية',
     title: 'تحديات ما تكشف إجابتك',
-    text: 'كل لاعب يحل بسرية، والنتائج تظهر بعد انتهاء الجولة مع عدد الإجابات الصحيحة والمحاولات.',
+    text: 'كل لاعب يحل بسرية، والنتائج تظهر بعد انتهاء الجولة مع عدد الإجابات الصحيحة والمحاولات',
     accent: 'gold',
   },
   {
     icon: Trophy,
     label: 'رتب تلقائية',
     title: 'تصنيفك يتكلم عنك',
-    text: 'رولات مبنية على تصنيفات الرابيد والبلتز والبولت، وتتحدث تلقائيًا من حسابك المرتبط.',
+    text: 'رولات مبنية على تصنيفات الرابيد والبلتز والبولت، وتتحدث تلقائيًا من حسابك المرتبط',
     accent: 'blue',
   },
 ];
@@ -53,9 +53,9 @@ const ratings = [
 ];
 
 const steps = [
-  { number: '01', title: 'اربط حسابك', text: 'تسجيل رسمي وآمن بحساب Chess.com بدون كلمات مرور داخل البوت.', icon: CircleUserRound },
-  { number: '02', title: 'خذ رتبتك', text: 'يتحقق SoliChess من تصنيفاتك ويفتح لك السيرفر والرولات المستحقة.', icon: ShieldCheck },
-  { number: '03', title: 'طوّر لعبك', text: 'حل ألغاز، راجع مبارياتك، ونافس أصحابك من مكان واحد.', icon: Swords },
+  { number: '01', title: 'اربط حسابك', text: 'تسجيل رسمي وآمن بحساب Chess.com بدون كلمات مرور داخل البوت', icon: CircleUserRound },
+  { number: '02', title: 'خذ رتبتك', text: 'يتحقق SoliChess من تصنيفاتك ويفتح لك السيرفر والرولات المستحقة', icon: ShieldCheck },
+  { number: '03', title: 'طوّر لعبك', text: 'حل ألغاز، راجع مبارياتك، ونافس أصحابك من مكان واحد', icon: Swords },
 ];
 
 export default function Home() {
@@ -81,8 +81,8 @@ export default function Home() {
         <div className="hero-grid" aria-hidden="true" />
         <div className="hero-copy">
           <Badge className="hero-kicker"><span className="live-dot" /> رفيق الشطرنج داخل ديسكورد</Badge>
-          <h1>العب. راجع.<br /><span>وتقدّم نقلة بنقلة.</span></h1>
-          <p>SoliChess يحوّل سيرفرك إلى نادي شطرنج متكامل: مراجعة مباريات، ألغاز تنافسية، تصنيفات موثّقة، وتجربة مصممة للاعبين.</p>
+          <h1>العب، راجع<br /><span>وتقدّم نقلة بنقلة</span></h1>
+          <p>SoliChess يحوّل سيرفرك إلى نادي شطرنج متكامل: مراجعة مباريات، ألغاز تنافسية، تصنيفات موثّقة، وتجربة مصممة للاعبين</p>
           <div className="hero-actions">
             <Button nativeButton={false} render={<a href="#launch" aria-label="انتقل إلى قسم إضافة البوت" />} className="primary-link h-13 rounded-full bg-[#4fe1bc] px-7 text-base font-extrabold !text-[#06251c] shadow-[0_0_30px_rgba(79,225,188,.2)] hover:bg-[#79edd0]">
               أضف البوت لسيرفرك <ArrowLeft className="size-5" />
@@ -110,8 +110,8 @@ export default function Home() {
       <section id="features" className="section-wrap features-section">
         <div className="section-heading">
           <Badge className="section-badge">مصمم لمجتمعك</Badge>
-          <h2>كل اللي يحتاجه لاعب الشطرنج، <span>في بوت واحد.</span></h2>
-          <p>أوامر أقل، وضوح أكثر، وتجربة تخلي أعضاء السيرفر يرجعون كل يوم.</p>
+          <h2>كل اللي يحتاجه لاعب الشطرنج، <span>في بوت واحد</span></h2>
+          <p>أوامر أقل، وضوح أكثر، وتجربة تخلي أعضاء السيرفر يرجعون كل يوم</p>
         </div>
         <div className="feature-grid">
           {features.map((feature) => {
@@ -134,12 +134,12 @@ export default function Home() {
         <div className="section-wrap review-layout">
           <div className="review-copy">
             <Badge className="section-badge">مراجعة تفاعلية</Badge>
-            <h2>مو بس يقول لك إنك أخطأت. <span>يوريك ليه.</span></h2>
-            <p>تنقّل بين النقلات، شاهد المسار الأفضل، وافهم تغيّر التقييم بدون ما تغادر ديسكورد. التجربة سريعة وواضحة حتى على الجوال.</p>
+            <h2>مو بس يقول لك إنك أخطأت، <span>يوريك ليه</span></h2>
+            <p>تنقّل بين النقلات، شاهد المسار الأفضل، وافهم تغيّر التقييم بدون ما تغادر ديسكورد، التجربة سريعة وواضحة حتى على الجوال</p>
             <ul>
-              <li><span>01</span><div><strong>تصنيف كل نقلة</strong><small>رائعة، ممتازة، جيدة، خطأ أو هفوة.</small></div></li>
-              <li><span>02</span><div><strong>مسار التحسين</strong><small>الخط المقترح يظهر بشكل مرتب وسهل.</small></div></li>
-              <li><span>03</span><div><strong>ملخص كامل</strong><small>الدقة، متوسط الخسارة، وأهم لحظات المباراة.</small></div></li>
+              <li><span>01</span><div><strong>تصنيف كل نقلة</strong><small>رائعة، ممتازة، جيدة، خطأ أو هفوة</small></div></li>
+              <li><span>02</span><div><strong>مسار التحسين</strong><small>الخط المقترح يظهر بشكل مرتب وسهل</small></div></li>
+              <li><span>03</span><div><strong>ملخص كامل</strong><small>الدقة، متوسط الخسارة، وأهم لحظات المباراة</small></div></li>
             </ul>
           </div>
           <ReviewDemo />
@@ -147,7 +147,7 @@ export default function Home() {
       </section>
 
       <section id="how" className="section-wrap how-section">
-        <div className="section-heading compact-heading"><Badge className="section-badge">ثلاث خطوات فقط</Badge><h2>من دخول السيرفر إلى أول تحدي.</h2></div>
+        <div className="section-heading compact-heading"><Badge className="section-badge">ثلاث خطوات فقط</Badge><h2>من دخول السيرفر إلى أول تحدي</h2></div>
         <div className="steps-grid">
           {steps.map((step, index) => {
             const Icon = step.icon;
@@ -158,7 +158,7 @@ export default function Home() {
 
       <section className="community-section">
         <div className="section-wrap community-grid">
-          <div><Badge className="section-badge">منافسة يومية</Badge><h2>لغز واحد. إجابات سرية. <span>فائز واحد.</span></h2><p>تحديات تلقائية كل 6 أو 12 ساعة، مع لوحة نتائج تحفظ الحماس وتمنع الغش.</p></div>
+          <div><Badge className="section-badge">منافسة يومية</Badge><h2>لغز واحد، إجابات سرية، <span>فائز واحد</span></h2><p>تحديات تلقائية كل 6 أو 12 ساعة، مع لوحة نتائج تحفظ الحماس وتمنع الغش</p></div>
           <div className="leaderboard" aria-label="مثال لترتيب التحدي اليومي">
             <div className="leaderboard-head"><span>تحدي اليوم</span><Badge>ينتهي بعد 03:42:18</Badge></div>
             {[
@@ -171,15 +171,15 @@ export default function Home() {
       <section id="launch" className="section-wrap launch-section">
         <div className="launch-card">
           <div className="launch-pattern" aria-hidden="true">♙ ♟ ♘ ♜ ♕</div><div className="launch-icon"><Bot /></div>
-          <Badge className="launch-badge"><Radar /> قريبًا</Badge><h2>جاهز تخلي سيرفرك<br />يلعب بشكل أذكى؟</h2><p>قريبًا بعد اكتمال اعتماد الربط الرسمي. خلك أول من يجرب SoliChess.</p>
+          <Badge className="launch-badge"><Radar /> قريبًا</Badge><h2>جاهز تخلي سيرفرك<br />يلعب بشكل أذكى؟</h2><p>قريبًا بعد اكتمال اعتماد الربط الرسمي، خلك أول من يجرب SoliChess</p>
           <Button disabled className="h-13 rounded-full bg-[#0b1510] px-8 text-base font-bold text-white opacity-100 hover:bg-[#17251c]"><MessageCircleMore /> رابط الإضافة بعد الاعتماد</Button>
           <span className="launch-note"><LockKeyhole /> لا نطلب أو نخزّن كلمة مرور حسابك</span>
         </div>
       </section>
 
       <footer className="footer">
-        <div className="footer-inner"><a href="#top" className="brand"><span className="brand-mark">♞</span><span>SoliChess</span></a><p>بوت شطرنج عربي، مبني للمجتمعات اللي تحب تنافس وتتطور.</p><div><a href="#features">المزايا</a><a href="#review">المراجعة</a><a href="#how">طريقة العمل</a></div></div>
-        <div className="footer-bottom"><span>© 2026 SoliChess</span><span><Crown /> العب بذكاء. استمتع أكثر.</span></div>
+        <div className="footer-inner"><a href="#top" className="brand"><span className="brand-mark">♞</span><span>SoliChess</span></a><p>بوت شطرنج عربي، مبني للمجتمعات اللي تحب تنافس وتتطور</p><div><a href="#features">المزايا</a><a href="#review">المراجعة</a><a href="#how">طريقة العمل</a></div></div>
+        <div className="footer-bottom"><span>© 2026 SoliChess</span><span><Crown /> العب بذكاء، استمتع أكثر</span></div>
       </footer>
     </main>
   );
